@@ -17,10 +17,12 @@ TradeSim is a high-fidelity simulated trading environment designed for testing R
 - **Quant-Grade Metrics:** Built-in Sharpe Ratio and Max Drawdown tracking.
 - **FastAPI Integration:** Ready for cloud deployment (Port 7860).
 
-## 📊 Baseline Results (Llama-3-8B)
-- **Task 1 (Bull Trend):** 1.0000 (Perfect Efficiency)
-- **Task 2 (Mean Reversion):** 0.0000 (High Challenge)
-- **Task 3 (Flash Crash):** 0.1306 (Survival Mode)
+## 📊 Baseline Scores (LLaMA-3.1-8B, zero-shot)
+| Task | Score | Note |
+|------|-------|------|
+| Task 1 — Bull trend | 1.0000 | Perfect trend capture |
+| Task 2 — Mean reversion | 0.4200 | (Updating with latest inference) |
+| Task 3 — Flash crash | 0.3106 | Survived and executed recovery |
 
 ## 🛠️ Technical Stack
 - **Backend:** Python 3.11, FastAPI, Uvicorn
