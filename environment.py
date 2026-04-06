@@ -127,18 +127,9 @@ class TradeSimEnv:
     # ------------------------------------------------------------------
     # reset()
     # ------------------------------------------------------------------
-
     def reset(self, task_id: int = 1) -> Observation:
         """
         Start a new episode.
-
-        Parameters
-        ----------
-        task_id : 1 (bull), 2 (range), or 3 (crash)
-
-        Returns
-        -------
-        Initial Observation at timestep 0.
         """
         if task_id not in _TASK_REGIMES:
             raise ValueError(f"task_id must be 1, 2, or 3; got {task_id}")
@@ -173,53 +164,54 @@ class TradeSimEnv:
             num_steps=config.num_steps,
             seed=config.seed,
         )
-        # --- OPTIMIZATION 2: VECTORIZED PRE-COMPUTATION BLOCK ---
-    import numpy as np # Ensure numpy is imported if not at the top of the file
-    
-    self._precomputed_windows = []
-    prices = self._prices
-    n = config.num_steps
-    ws = config.window_size
-    
-    for t in range(n):
-        window_start = max(0, t - ws + 1)
-        actual_window_size = t - window_start + 1
-        raw_window = prices[window_start:window_start + actual_window_size]
-        
-        # Pad early timesteps with the initial price
-        pad_needed = ws - actual_window_size
-        if pad_needed > 0:
-            raw_window = np.concatenate((np.full(pad_needed, prices[0]), raw_window))
-            
-        # Vectorized Log Returns
-        log_rets = np.diff(np.log(raw_window)).tolist()
-        
-        # Vectorized Z-Score Normalization
-        mu = np.mean(raw_window)
-        std = np.std(raw_window)
-        if std < 1e-10:
-            norm_window = np.zeros_like(raw_window).tolist()
-        else:
-            norm_window = ((raw_window - mu) / std).tolist()
-            
-        from models import PriceWindow # Ensure this is imported at the top
-        self._precomputed_windows.append(
-            PriceWindow(
-                raw_prices=raw_window.tolist(),
-                returns=log_rets,
-                normalised_prices=norm_window
-            )
-        )
-    # --- END OPTIMIZATION 2 BLOCK ---
 
+        # --- OPTIMIZATION 2: VECTORIZED PRE-COMPUTATION BLOCK ---
+        import numpy as np 
+        from models import PriceWindow 
+        
+        self._precomputed_windows = []
+        prices = self._prices
+        n = config.num_steps
+        ws = config.window_size
+        
+        for t in range(n):
+            window_start = max(0, t - ws + 1)
+            actual_window_size = t - window_start + 1
+            raw_window = prices[window_start:window_start + actual_window_size]
+            
+            # Pad early timesteps with the initial price
+            pad_needed = ws - actual_window_size
+            if pad_needed > 0:
+                raw_window = np.concatenate((np.full(pad_needed, prices[0]), raw_window))
+                
+            # Vectorized Log Returns
+            log_rets = np.diff(np.log(raw_window)).tolist()
+            
+            # Vectorized Z-Score Normalization
+            mu = np.mean(raw_window)
+            std = np.std(raw_window)
+            if std < 1e-10:
+                norm_window = np.zeros_like(raw_window).tolist()
+            else:
+                norm_window = ((raw_window - mu) / std).tolist()
+                
+            self._precomputed_windows.append(
+                PriceWindow(
+                    raw_prices=raw_window.tolist(),
+                    returns=log_rets,
+                    normalised_prices=norm_window
+                )
+            )
+        # --- END OPTIMIZATION 2 BLOCK ---
 
         # Initialise portfolio
         self._portfolio = create_portfolio(initial_capital=config.initial_capital)
         self._portfolio = self._portfolio.update_peak(price=self._prices[0])
         self._prev_portfolio_snapshot = self._portfolio.to_snapshot(price=self._prices[0])
-
+        
+        # This line must be indented exactly like the lines above it!
         return self._build_observation(self._timestep)
-
+    
     # ------------------------------------------------------------------
     # step()
     # ------------------------------------------------------------------
