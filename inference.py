@@ -215,8 +215,9 @@ async def call_llm(
             return response.choices[0].message.content or ""
 
         except RateLimitError as e:
-            wait = RETRY_BASE_DELAY * (2 ** attempt)
-            log.warning(f"Rate limited on step {step}, attempt {attempt+1}. Waiting {wait}s...")
+            # Wait 15s for the first strike, then 25s, then 35s
+            wait = 15.0 + (10.0 * attempt) 
+            log.warning(f"Rate limited on step {step}. Throttling for {wait}s...")
             await asyncio.sleep(wait)
 
         except APIError as e:
@@ -233,9 +234,9 @@ async def call_llm(
 # ---------------------------------------------------------------------------
 
 async def run_task(
-    env: TradeSimEnv,
-    client: OpenAI,
     task_id: int,
+    client: AsyncOpenAI,
+    
     task_timeout: float = PER_TASK_TIMEOUT_S,
 ) -> float:
     """
@@ -246,7 +247,10 @@ async def run_task(
     task_start = time.time()
     log.info(f"Starting Task {task_id}...")
 
+    # --- NEW: Override the default steps ---
     env = TradeSimEnv()
+    env._base_config = EnvironmentConfig(regime="bull", num_steps=40)
+    # ---------------------------------------    
     obs = env.reset(task_id=task_id)
     task_desc = env.task_description
     regime_hint = env.regime_hint
@@ -271,7 +275,7 @@ async def run_task(
         raw_response = await call_llm(client, prompt, step) 
         
         api_latency = time.time() - t0
-
+        await asyncio.sleep(2.5)
         action = parse_action(raw_response)
         
         # <--- NEW: Record the agent's decision into memory
@@ -320,22 +324,21 @@ async def async_main():
         sys.exit(1)
 
     print("=" * 65)
-    print("TradeSim Inference Runner (ASYNC MODE)")
+    print("TradeSim Inference Runner (SEQUENTIAL MODE)")
     print(f"  Model      : {MODEL_NAME}")
     print("=" * 65)
 
-    client = AsyncOpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+    client = AsyncOpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN, max_retries=0)
     global_start = time.time()
 
-    # Launch all 3 tasks simultaneously and wait for them all to finish!
-    results = await asyncio.gather(
-        run_task(client, 1),
-        run_task(client, 2),
-        run_task(client, 3)
-    )
-
-    # Convert results list of tuples [(1, score), (2, score), (3, score)] into a dictionary
-    scores = {task_id: score for task_id, score in results}
+    scores = {}
+    
+    # THE FIX: Run them one by one instead of all at once.
+    # This prevents Groq from throwing 429 Rate Limit errors.
+    for task_id in [1, 2, 3]:
+        # We give each task a generous 10-minute timeout just to be safe
+        tid, score = await run_task(task_id, client, task_timeout=900.0)
+        scores[tid] = score
 
     print("\n" + "=" * 65)
     print("FINAL SCORES")
