@@ -157,24 +157,24 @@ async def health_alt():
 
 
 @app.post("/reset")
-async def reset(request: ResetRequest) -> dict:
+async def reset(request: Optional[ResetRequest] = None) -> dict:
     """
     Reset the environment to start a new episode.
-
-    Body: {"task_id": 1}   (1=bull, 2=range, 3=crash)
-
-    Returns: Full Observation as JSON.
+    Gracefully handles empty requests from automated graders.
     """
     app_state.request_count += 1
 
-    if request.task_id not in [1, 2, 3]:
+    # THE FIX: If the bot sends an empty body (None), default to task 1
+    task_id = request.task_id if request else 1
+
+    if task_id not in [1, 2, 3]:
         raise HTTPException(
             status_code=422,
-            detail=f"task_id must be 1, 2, or 3. Got: {request.task_id}"
+            detail=f"task_id must be 1, 2, or 3. Got: {task_id}"
         )
 
     try:
-        obs = app_state.env.reset(task_id=request.task_id)
+        obs = app_state.env.reset(task_id=task_id)
         app_state.last_reset_time = time.time()
         return {
             "observation": obs.model_dump(),
