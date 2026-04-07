@@ -1,29 +1,30 @@
-name: TradeSim
+name: "TradeSim"
 version: "1.0.0"
 description: >
   A risk-aware algorithmic trading RL environment. Tests agents across three 
   market regimes: bull trend, mean reversion, and flash crash survival.
-author: Themighty007
+author: "Themighty007"
+entrypoint: "environment:TradeSimEnv"
 tasks:
-  - id: 1
-    name: bull_trend_following
-    difficulty: easy
-    description: Ride a 15% upward trend with momentum signals
-  - id: 2
-    name: mean_reversion_choppy
-    difficulty: medium
-    description: Trade Bollinger Band edges in a non-trending range
-  - id: 3
-    name: flash_crash_survival
-    difficulty: hard
-    description: Detect and survive a 20% sudden price drop, then recover
+  - id: "1"
+    name: "bull_trend_following"
+    difficulty: "easy"
+    description: "Ride a 15% upward trend with momentum signals."
+  - id: "2"
+    name: "mean_reversion_choppy"
+    difficulty: "medium"
+    description: "Trade Bollinger Band edges in a non-trending range."
+  - id: "3"
+    name: "flash_crash_survival"
+    difficulty: "hard"
+    description: "Detect and survive a 20% sudden price drop, then recover."
 action_space:
-  type: discrete_with_sizing
-  decisions: [BUY, SELL, HOLD]
-  position_size: {type: float, min: 0.0, max: 1.0}
+  type: "discrete_with_sizing"
+  decisions: ["BUY", "SELL", "HOLD"]
+  position_size: {type: "float", min: 0.0, max: 1.0}
 observation_space:
-  current_price: float
-  indicators: [rsi, ma20, macd, bb_upper, bb_lower]
-  portfolio: [cash, position, unrealized_pnl, total_value]
+  current_price: "float"
+  indicators: ["rsi", "ma20", "macd", "bb_upper", "bb_lower"]
+  portfolio: ["cash", "position", "unrealized_pnl", "total_value"]
 reward_range: [-1.0, 1.0]
-episode_length: 80
+episode_length: 40
