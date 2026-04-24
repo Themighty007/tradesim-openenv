@@ -1,16 +1,8 @@
 """
 TradeSim v3 — dashboard.py
 ==========================
-FINAL VERSION — Vertically stacked. No fake seed data. No side-by-side splits.
+FINAL VERSION — Vertically stacked.
 Educational glossary panel. Separated charts. Honest training curve.
-
-Run: streamlit run dashboard.py
-Dependencies: streamlit plotly numpy
-
-This file is completely self-contained from the UI perspective.
-It connects to the real TradeSim environment for live episodes.
-It reads real training_metrics.jsonl for the learning curve.
-It never fabricates data.
 """
 
 import json
@@ -954,42 +946,42 @@ for k, v in [("page", "landing"), ("history", []), ("grade", None), ("ep_count",
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.page == "landing":
     st.markdown(f"""
-    <div class="landing">
-        <div class="landing-title">TradeSim v3</div>
-        <div class="landing-tag">The Bloomberg Terminal for AI Agents</div>
+<div class="landing">
+    <div class="landing-title">TradeSim v3</div>
+    <div class="landing-tag">The Bloomberg Terminal for AI Agents</div>
 
-        <div class="feature-grid">
-            <div class="feature-pill">
-                <div class="feature-dot" style="background:{G}"></div>
-                4-Axis World Model
-            </div>
-            <div class="feature-pill">
-                <div class="feature-dot" style="background:{B}"></div>
-                Unsupervised Regime Detection (HMM)
-            </div>
-            <div class="feature-pill">
-                <div class="feature-dot" style="background:{Y}"></div>
-                Granger Causality — Fundamentals cause prices
-            </div>
-            <div class="feature-pill">
-                <div class="feature-dot" style="background:{R}"></div>
-                Multi-Agent Dynamics — Panic, FOMO, Whale
-            </div>
-            <div class="feature-pill">
-                <div class="feature-dot" style="background:{P}"></div>
-                Self-Improving Agent via Coach Prompts
-            </div>
+    <div class="feature-grid">
+        <div class="feature-pill">
+            <div class="feature-dot" style="background:{G}"></div>
+            4-Axis World Model
         </div>
-
-        <div style="font-size:13px;color:{SUB};max-width:600px;line-height:1.7;margin-bottom:40px">
-            TradeSim v3 is a production-grade Reinforcement Learning environment that tests
-            AI agents across three market regimes using a causal world model combining
-            technical analysis, fundamental economics, market psychology, and
-            unsupervised Hidden Markov Model regime detection.
-            Built for the Meta × Scaler OpenEnv Hackathon Grand Finale 2026.
+        <div class="feature-pill">
+            <div class="feature-dot" style="background:{B}"></div>
+            Unsupervised Regime Detection (HMM)
+        </div>
+        <div class="feature-pill">
+            <div class="feature-dot" style="background:{Y}"></div>
+            Granger Causality — Fundamentals cause prices
+        </div>
+        <div class="feature-pill">
+            <div class="feature-dot" style="background:{R}"></div>
+            Multi-Agent Dynamics — Panic, FOMO, Whale
+        </div>
+        <div class="feature-pill">
+            <div class="feature-dot" style="background:{P}"></div>
+            Self-Improving Agent via Coach Prompts
         </div>
     </div>
-    """, unsafe_allow_html=True)
+
+    <div style="font-size:13px;color:{SUB};max-width:600px;line-height:1.7;margin-bottom:40px">
+        TradeSim v3 is a production-grade Reinforcement Learning environment that tests
+        AI agents across three market regimes using a causal world model combining
+        technical analysis, fundamental economics, market psychology, and
+        unsupervised Hidden Markov Model regime detection.
+        Built for the Meta × Scaler OpenEnv Hackathon Grand Finale 2026.
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -1012,19 +1004,19 @@ else:
     h1, h2 = st.columns([3, 1])
     with h1:
         st.markdown(f"""
-        <div class="page-header">
-            <div>
-                <div class="page-title">TradeSim v3 · AI Quantitative Research Terminal</div>
-                <div class="page-sub">Meta × Scaler OpenEnv Grand Finale 2026</div>
-            </div>
-            <div class="status-row">
-                <span class="status-dot"><span style="color:{G}">●</span> OpenEnv Active</span>
-                <span class="status-dot"><span style="color:{G}">●</span> HMM Ready</span>
-                <span class="status-dot"><span style="color:{G}">●</span> Granger Verified</span>
-                <span class="status-dot"><span style="color:{Y}">●</span> LLM Simulated</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+<div class="page-header">
+    <div>
+        <div class="page-title">TradeSim v3 · AI Quantitative Research Terminal</div>
+        <div class="page-sub">Meta × Scaler OpenEnv Grand Finale 2026</div>
+    </div>
+    <div class="status-row">
+        <span class="status-dot"><span style="color:{G}">●</span> OpenEnv Active</span>
+        <span class="status-dot"><span style="color:{G}">●</span> HMM Ready</span>
+        <span class="status-dot"><span style="color:{G}">●</span> Granger Verified</span>
+        <span class="status-dot"><span style="color:{Y}">●</span> LLM Simulated</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
     with h2:
         if st.button("📖  Glossary / Help", use_container_width=True):
             st.session_state.show_glossary = not st.session_state.show_glossary
@@ -1066,25 +1058,26 @@ else:
         st.markdown('<div class="glossary-box"><div class="glossary-grid">', unsafe_allow_html=True)
         for name, icon, body, example in GLOSSARY:
             st.markdown(f"""
-            <div class="gterm">
-                <div class="gterm-name">{icon} {name}</div>
-                <div class="gterm-body">{body}</div>
-                <div class="gterm-example">Example: {example}</div>
-            </div>""", unsafe_allow_html=True)
+<div class="gterm">
+    <div class="gterm-name">{icon} {name}</div>
+    <div class="gterm-body">{body}</div>
+    <div class="gterm-example">Example: {example}</div>
+</div>
+""", unsafe_allow_html=True)
         st.markdown("</div></div>", unsafe_allow_html=True)
 
     # ── No episode yet ────────────────────────────────────────────────────────
     if not st.session_state.history:
         meta = REGIMES[task_id]
         st.markdown(f"""
-        <div style="text-align:center;padding:60px 20px;color:{SUB}">
-            <div style="font-size:64px;margin-bottom:16px">{meta['icon']}</div>
-            <div style="font-size:18px;font-weight:700;color:{meta['color']};margin-bottom:8px">{meta['name']} selected</div>
-            <div style="font-size:14px;line-height:1.7;max-width:600px;margin:0 auto">{meta['story']}</div>
-            <div style="margin-top:20px;font-size:13px;font-weight:600;color:{meta['color']}">{meta['target']}</div>
-            <div style="margin-top:32px;font-size:13px">Press <strong style="color:{TXT}">▶ Run Episode</strong> above to start</div>
-        </div>
-        """, unsafe_allow_html=True)
+<div style="text-align:center;padding:60px 20px;color:{SUB}">
+    <div style="font-size:64px;margin-bottom:16px">{meta['icon']}</div>
+    <div style="font-size:18px;font-weight:700;color:{meta['color']};margin-bottom:8px">{meta['name']} selected</div>
+    <div style="font-size:14px;line-height:1.7;max-width:600px;margin:0 auto">{meta['story']}</div>
+    <div style="margin-top:20px;font-size:13px;font-weight:600;color:{meta['color']}">{meta['target']}</div>
+    <div style="margin-top:32px;font-size:13px">Press <strong style="color:{TXT}">▶ Run Episode</strong> above to start</div>
+</div>
+""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
         st.stop()
 
@@ -1099,12 +1092,12 @@ else:
         st.error("plotly not installed. Run: pip install plotly")
         st.stop()
 
-    steps     = [h["step"]      for h in history]
-    prices    = [h["price"]     for h in history]
-    nw        = [h["net_worth"] for h in history]
-    rewards   = [h["reward"]    for h in history]
-    hmm_bull  = [h["hmm_bull"]  for h in history]
-    hmm_crash = [h["hmm_crash"] for h in history]
+    steps      = [h["step"]      for h in history]
+    prices     = [h["price"]     for h in history]
+    nw         = [h["net_worth"] for h in history]
+    rewards    = [h["reward"]    for h in history]
+    hmm_bull   = [h["hmm_bull"]  for h in history]
+    hmm_crash  = [h["hmm_crash"] for h in history]
 
     final_ret  = (nw[-1] - nw[0]) / nw[0] * 100 if nw[0] > 0 else 0.0
     max_dd_pct = max(h["drawdown"] for h in history) * 100
@@ -1126,28 +1119,32 @@ else:
 
     crash_note = ""
     if is_cash:
-        crash_note = f"""<div style="background:#0d1f0d;border:1px solid #1a4a1a;border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:{G};font-weight:600">
-        ✓ Flash Crash Survival: Agent held 100% cash. 0 trades = 0 fees = capital fully preserved.
-        Score {ep_score:.3f} IS the correct result — this is perfect crash avoidance behaviour, not a failure.</div>"""
+        crash_note = f"""
+<div style="background:#0d1f0d;border:1px solid #1a4a1a;border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:{G};font-weight:600">
+    ✓ Flash Crash Survival: Agent held 100% cash. 0 trades = 0 fees = capital fully preserved.
+    Score {ep_score:.3f} IS the correct result — this is perfect crash avoidance behaviour, not a failure.
+</div>
+"""
 
     st.markdown(f"""
-    <div style="background:{meta['bg']};border:1px solid {meta['border_bg']};border-left:4px solid {meta['color']};border-radius:10px;padding:18px 22px;margin-bottom:4px">
-        <div style="font-size:14px;font-weight:800;color:{meta['color']};letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px">
-            {meta['icon']}  {meta['name']} — What the Agent Sees
-        </div>
-        <div style="font-size:14px;color:#ccc;line-height:1.75">{meta['story']}</div>
-        <div style="font-size:12px;font-weight:700;color:{meta['color']};margin-top:12px">{meta['target']}</div>
-        {crash_note}
+<div style="background:{meta['bg']};border:1px solid {meta['border_bg']};border-left:4px solid {meta['color']};border-radius:10px;padding:18px 22px;margin-bottom:4px">
+    <div style="font-size:14px;font-weight:800;color:{meta['color']};letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px">
+        {meta['icon']}  {meta['name']} — What the Agent Sees
     </div>
-    """, unsafe_allow_html=True)
+    <div style="font-size:14px;color:#ccc;line-height:1.75">{meta['story']}</div>
+    <div style="font-size:12px;font-weight:700;color:{meta['color']};margin-top:12px">{meta['target']}</div>
+    {crash_note}
+</div>
+""", unsafe_allow_html=True)
 
     # Agent rules
     st.markdown('<details style="margin-top:8px;margin-bottom:16px"><summary style="cursor:pointer;font-size:12px;color:' + SUB + ';padding:8px 0">▼ Agent decision rules for this regime</summary>', unsafe_allow_html=True)
     rules_html = "".join(f"""
-    <div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid {BORD}">
-        <div style="font-size:13px;font-weight:600;color:{TXT};min-width:220px">{rule}</div>
-        <div style="font-size:12px;color:{SUB}">{why}</div>
-    </div>""" for rule, why in meta["agent_rules"])
+<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid {BORD}">
+    <div style="font-size:13px;font-weight:600;color:{TXT};min-width:220px">{rule}</div>
+    <div style="font-size:12px;color:{SUB}">{why}</div>
+</div>
+""" for rule, why in meta["agent_rules"])
     st.markdown(f'<div style="padding:8px 0">{rules_html}</div></details>', unsafe_allow_html=True)
 
     # ── SECTION 2: Key Metrics ───────────────────────────────────────────────
@@ -1155,12 +1152,14 @@ else:
 
     def mcard(label, value, subtitle, color, accent, badge=""):
         badge_html = f'<div class="mcard-badge" style="background:{accent}22;color:{accent};border:1px solid {accent}55">{badge}</div>' if badge else ""
-        return f"""<div class="mcard" style="--accent:{accent}">
-            <div class="mcard-label">{label}</div>
-            <div class="mcard-value" style="color:{color}">{value}</div>
-            <div class="mcard-sub">{subtitle}</div>
-            {badge_html}
-        </div>"""
+        return f"""
+<div class="mcard" style="--accent:{accent}">
+    <div class="mcard-label">{label}</div>
+    <div class="mcard-value" style="color:{color}">{value}</div>
+    <div class="mcard-sub">{subtitle}</div>
+    {badge_html}
+</div>
+"""
 
     ret_str   = "Capital ✓" if is_cash else f"{final_ret:+.2f}%"
     ret_sub   = "100% cash preserved · 0 fees" if is_cash else "vs starting $100,000"
@@ -1174,27 +1173,27 @@ else:
     cards_html = "".join([
         mcard("Final Return",  ret_str,            ret_sub,                    ret_col, ret_col,    ret_badge),
         mcard("Sharpe Ratio",  f"{sharpe:.2f}",    "Return per unit of risk",  G if sharpe > 1 else (Y if sharpe > 0 else R), G, sharpe_badge),
-        mcard("Calmar Ratio",  f"{calmar:.2f}",    "Return ÷ Max Drawdown",   G if calmar > 0.5 else Y, Y, calmar_badge),
+        mcard("Calmar Ratio",  f"{calmar:.2f}",    "Return ÷ Max Drawdown",    G if calmar > 0.5 else Y, Y, calmar_badge),
         mcard("Max Drawdown",  f"{max_dd_pct:.1f}%", "Worst peak-to-trough loss", R if max_dd_pct > 10 else (Y if max_dd_pct > 5 else G), R, dd_badge),
         mcard("Total Trades",  str(n_trades),      "× 0.1% transaction cost",  Y, Y, "FEE-FREE ✓" if n_trades == 0 else ""),
         mcard("Episode Score", f"{ep_score:.3f}",  "Out of 1.0 (regime-adjusted)", G if ep_score > 0.55 else Y, meta["color"], ""),
     ])
-    st.markdown(f'<div class="metrics-row">{cards_html}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metrics-row">\n{cards_html}\n</div>', unsafe_allow_html=True)
 
     # ── SECTION 3: Chart 1 — Portfolio vs Price (SEPARATE) ──────────────────
     st.markdown('<div class="section-title">📈  Chart 1 of 3 — Portfolio Value vs Asset Price</div>', unsafe_allow_html=True)
     st.markdown(f"""
-    <div class="chart-box">
-        <div class="chart-title">How did the portfolio perform vs the raw market price?</div>
-        <div class="chart-subtitle">
-            Green line = your portfolio value (starts at $100,000).
-            Blue dotted line = the raw asset price (starts at ~$100).
-            They use <strong>separate Y-axes</strong> so both are readable.
-            Green triangles ▲ = BUY trades. Red triangles ▼ = SELL trades.
-            Vertical yellow dashes = the HMM detected a regime change.
-        </div>
+<div class="chart-box">
+    <div class="chart-title">How did the portfolio perform vs the raw market price?</div>
+    <div class="chart-subtitle">
+        Green line = your portfolio value (starts at $100,000).
+        Blue dotted line = the raw asset price (starts at ~$100).
+        They use <strong>separate Y-axes</strong> so both are readable.
+        Green triangles ▲ = BUY trades. Red triangles ▼ = SELL trades.
+        Vertical yellow dashes = the HMM detected a regime change.
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
     fig1 = go.Figure()
     fig1.add_trace(go.Scatter(
@@ -1253,18 +1252,18 @@ else:
     # ── SECTION 4: Chart 2 — HMM Regime (SEPARATE) ──────────────────────────
     st.markdown('<div class="section-title">🧠  Chart 2 of 3 — HMM Unsupervised Regime Detector</div>', unsafe_allow_html=True)
     st.markdown(f"""
-    <div class="chart-box">
-        <div class="chart-title">What market regime does the AI think we are in — WITHOUT being told?</div>
-        <div class="chart-subtitle">
-            This Hidden Markov Model (HMM) was trained <strong>unsupervised</strong> on price data alone.
-            It was never told "this is a bull market" or "this is a crash."
-            It discovered the market structure by itself.<br>
-            Green area = probability we are in a bull regime (aim for > 0.70 confidence).
-            Red area = probability we are in a volatile/crash regime.
-            When both lines cross = the HMM detected a regime shift.
-        </div>
+<div class="chart-box">
+    <div class="chart-title">What market regime does the AI think we are in — WITHOUT being told?</div>
+    <div class="chart-subtitle">
+        This Hidden Markov Model (HMM) was trained <strong>unsupervised</strong> on price data alone.
+        It was never told "this is a bull market" or "this is a crash."
+        It discovered the market structure by itself.<br>
+        Green area = probability we are in a bull regime (aim for > 0.70 confidence).
+        Red area = probability we are in a volatile/crash regime.
+        When both lines cross = the HMM detected a regime shift.
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(
@@ -1292,17 +1291,17 @@ else:
     # ── SECTION 5: Chart 3 — Cumulative Reward (SEPARATE, SIMPLE) ───────────
     st.markdown('<div class="section-title">🏆  Chart 3 of 3 — Cumulative Reward (Agent Learning Signal)</div>', unsafe_allow_html=True)
     st.markdown(f"""
-    <div class="chart-box">
-        <div class="chart-title">Is the agent earning or losing reward over time?</div>
-        <div class="chart-subtitle">
-            This is the raw learning signal. Going up = agent is being rewarded (good decisions).
-            Going down = agent is being penalised (bad decisions or high drawdown).
-            The reward function includes: P&L reward, drawdown penalty, transaction cost penalty, and survival bonus.
-            A smooth upward curve = disciplined, consistent trading.
-            A volatile curve = noisy, reactive trading.
-        </div>
+<div class="chart-box">
+    <div class="chart-title">Is the agent earning or losing reward over time?</div>
+    <div class="chart-subtitle">
+        This is the raw learning signal. Going up = agent is being rewarded (good decisions).
+        Going down = agent is being penalised (bad decisions or high drawdown).
+        The reward function includes: P&L reward, drawdown penalty, transaction cost penalty, and survival bonus.
+        A smooth upward curve = disciplined, consistent trading.
+        A volatile curve = noisy, reactive trading.
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
     cum_r = list(np.cumsum(rewards))
     fig3  = go.Figure()
@@ -1336,15 +1335,16 @@ else:
 
     def stile(name, val_str, interp, color, pct, explain):
         return f"""
-        <div class="stile" title="{explain}">
-            <div class="stile-name">{name}</div>
-            <div class="stile-val" style="color:{color}">{val_str}</div>
-            <div class="stile-interp" style="color:{color}">{interp}</div>
-            <div class="stile-bar">
-                <div class="stile-bar-fill" style="width:{min(pct,100)}%;background:{color};opacity:0.7"></div>
-            </div>
-            <div class="stile-explain">{explain[:60]}</div>
-        </div>"""
+<div class="stile" title="{explain}">
+    <div class="stile-name">{name}</div>
+    <div class="stile-val" style="color:{color}">{val_str}</div>
+    <div class="stile-interp" style="color:{color}">{interp}</div>
+    <div class="stile-bar">
+        <div class="stile-bar-fill" style="width:{min(pct,100)}%;background:{color};opacity:0.7"></div>
+    </div>
+    <div class="stile-explain">{explain[:60]}</div>
+</div>
+"""
 
     rsi_v = last["rsi"]
     rsi_c = R if rsi_v > 70 else (G if rsi_v < 30 else Y)
@@ -1387,13 +1387,13 @@ else:
         stile("MACD",        f"{macd_v:.4f}",      macd_i, macd_c, min(int(abs(macd_v)*3000), 100), "Trend momentum. Bullish when fast MA crosses above slow MA."),
         stile("BB %",        f"{bb_v:.2f}",        bb_i,   bb_c,   int(bb_v * 100),     "Price position within Bollinger Bands. 0=lower, 1=upper, outside=breakout."),
         stile("Fear/Greed",  f"{fg_v:+.2f}",       fg_i,   fg_c,   int((fg_v+1)*50),    "Market sentiment -1 to +1. Fade extremes: sell greed, buy fear."),
-        stile("VIX",         f"{vix_v:.1f}",        vix_i,  vix_c,  min(int(vix_v*2), 100), "Volatility index. <15 calm, >30 fear, >40 panic."),
+        stile("VIX",         f"{vix_v:.1f}",       vix_i,  vix_c,  min(int(vix_v*2), 100), "Volatility index. <15 calm, >30 fear, >40 panic."),
         stile("Earnings",    f"{earn_v:+.2f}",      earn_i, earn_c, int((earn_v+1)*50),  "Earnings surprise vs analyst estimates. Drift continues for 60 days."),
         stile("Fed bps",     f"{fed_v:+.0f}",       fed_i,  fed_c,  50,                  "Fed rate change in basis points. +25 = 0.25% hike = bearish for stocks."),
-        stile("Credit",      f"{cr_v:.0f}",          cr_i,   cr_c,   min(int(cr_v/20), 100), "High-yield credit spread in bps. >600 = systemic stress = sell signal."),
+        stile("Credit",      f"{cr_v:.0f}",         cr_i,   cr_c,   min(int(cr_v/20), 100), "High-yield credit spread in bps. >600 = systemic stress = sell signal."),
         stile("HMM Regime",  f"{hb_v:.2f}",         hmm_i,  hmm_c,  int(hb_v * 100),    "Hidden Markov Model unsupervised regime probability. No labels given."),
     ]
-    st.markdown(f'<div class="signals-grid">{"".join(tiles)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="signals-grid">\n{"".join(tiles)}\n</div>', unsafe_allow_html=True)
 
     # ── SECTION 7: 4-Axis Performance ───────────────────────────────────────
     st.markdown('<div class="section-title">🎯  4-Axis Performance Scores</div>', unsafe_allow_html=True)
@@ -1422,20 +1422,20 @@ else:
         bar_pct   = int(score * 100)
         score_lbl = "Excellent ✓" if score > 0.75 else ("Good" if score > 0.55 else ("Fair" if score > 0.35 else "Needs improvement"))
         st.markdown(f"""
-        <div class="axis-row">
-            <div class="axis-header">
-                <div class="axis-name">{icon}  {axis_name}</div>
-                <div style="display:flex;align-items:center;gap:10px">
-                    <span style="font-size:12px;color:{SUB}">{score_lbl}</span>
-                    <div class="axis-score" style="color:{color}">{score:.2f}</div>
-                </div>
-            </div>
-            <div class="axis-bar">
-                <div class="axis-bar-fill" style="width:{bar_pct}%;background:{color}"></div>
-            </div>
-            <div class="axis-desc">{desc}</div>
+<div class="axis-row">
+    <div class="axis-header">
+        <div class="axis-name">{icon}  {axis_name}</div>
+        <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:12px;color:{SUB}">{score_lbl}</span>
+            <div class="axis-score" style="color:{color}">{score:.2f}</div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    <div class="axis-bar">
+        <div class="axis-bar-fill" style="width:{bar_pct}%;background:{color}"></div>
+    </div>
+    <div class="axis-desc">{desc}</div>
+</div>
+""", unsafe_allow_html=True)
 
     # ── SECTION 8: Granger Causality ─────────────────────────────────────────
     st.markdown('<div class="section-title">🔬  Granger Causality — Statistical Proof</div>', unsafe_allow_html=True)
@@ -1447,25 +1447,25 @@ else:
     ge_col  = G if is_caus else R
 
     st.markdown(f"""
-    <div class="granger-box">
-        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:{SUB};margin-bottom:8px">
-            Earnings Surprise → Price Returns
-        </div>
-        <div class="granger-pval" style="color:{ge_col}">p = {ge:.3f}</div>
-        <div class="causal-badge">{'✓  Causal relationship confirmed' if is_caus else '✗  Not statistically significant'}</div>
-        <div style="font-size:14px;color:#ccc;line-height:1.7;margin-top:14px">
-            <strong style="color:{TXT}">What this means in plain English:</strong><br>
-            A p-value of {ge:.3f} is {'below' if is_caus else 'above'} the 0.05 significance threshold.
-            {'This means the earnings_surprise signal statistically <strong style="color:' + G + '">causes</strong> future price returns — not just correlates with them.' if is_caus else 'The signal does not have statistically significant predictive power on this episode length.'}
-            <br><br>
-            This is the same test used by academic quant researchers to validate trading signals.
-            A Granger-causal signal is a <em>valid</em> trading signal — it provides information
-            about the future that is not already in price history alone.
-            This proves TradeSim v3 is a <strong style="color:{G}">causal world model</strong>,
-            not a random price generator.
-        </div>
+<div class="granger-box">
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:{SUB};margin-bottom:8px">
+        Earnings Surprise → Price Returns
     </div>
-    """, unsafe_allow_html=True)
+    <div class="granger-pval" style="color:{ge_col}">p = {ge:.3f}</div>
+    <div class="causal-badge">{'✓  Causal relationship confirmed' if is_caus else '✗  Not statistically significant'}</div>
+    <div style="font-size:14px;color:#ccc;line-height:1.7;margin-top:14px">
+        <strong style="color:{TXT}">What this means in plain English:</strong><br>
+        A p-value of {ge:.3f} is {'below' if is_caus else 'above'} the 0.05 significance threshold.
+        {'This means the earnings_surprise signal statistically <strong style="color:' + G + '">causes</strong> future price returns — not just correlates with them.' if is_caus else 'The signal does not have statistically significant predictive power on this episode length.'}
+        <br><br>
+        This is the same test used by academic quant researchers to validate trading signals.
+        A Granger-causal signal is a <em>valid</em> trading signal — it provides information
+        about the future that is not already in price history alone.
+        This proves TradeSim v3 is a <strong style="color:{G}">causal world model</strong>,
+        not a random price generator.
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
     # ── SECTION 9: Agent Brain ──────────────────────────────────────────────
     st.markdown('<div class="section-title">🧠  Agent Brain — Last Decision Explained</div>', unsafe_allow_html=True)
@@ -1496,13 +1496,13 @@ else:
     )
 
     st.markdown(f"""
-    <div class="brain-box">
-        <div class="brain-decision" style="color:{ac_col}">{ac} {int(frac*100)}%</div>
-        <div class="brain-meta">Step {lt['step']} · {lt.get('label', '')} · Conviction score {lt.get('net_score', 0):+d}</div>
-        <div class="brain-reason">{narr}</div>
-        <div class="pills-row">{pills_html}</div>
-    </div>
-    """, unsafe_allow_html=True)
+<div class="brain-box">
+    <div class="brain-decision" style="color:{ac_col}">{ac} {int(frac*100)}%</div>
+    <div class="brain-meta">Step {lt['step']} · {lt.get('label', '')} · Conviction score {lt.get('net_score', 0):+d}</div>
+    <div class="brain-reason">{narr}</div>
+    <div class="pills-row">\n{pills_html}\n</div>
+</div>
+""", unsafe_allow_html=True)
 
     # ── SECTION 10: Multi-Agent Activity ────────────────────────────────────
     st.markdown('<div class="section-title">👥  Multi-Agent Market Dynamics</div>', unsafe_allow_html=True)
@@ -1531,35 +1531,35 @@ else:
     for key, label, color, mechanism, real_world in agent_defs:
         count = ac_map.get(key, 0)
         st.markdown(f"""
-        <div class="agent-box" style="margin-bottom:12px">
-            <div class="agent-row">
-                <div>
-                    <div class="agent-name" style="color:{color}">{label}</div>
-                    <div class="agent-desc" style="color:{SUB}">{mechanism}</div>
-                    <div class="agent-desc" style="color:{DIM};margin-top:4px;font-style:italic">{real_world}</div>
-                </div>
-                <div class="agent-count" style="color:{color}">{count}x</div>
-            </div>
+<div class="agent-box" style="margin-bottom:12px">
+    <div class="agent-row">
+        <div>
+            <div class="agent-name" style="color:{color}">{label}</div>
+            <div class="agent-desc" style="color:{SUB}">{mechanism}</div>
+            <div class="agent-desc" style="color:{DIM};margin-top:4px;font-style:italic">{real_world}</div>
         </div>
-        """, unsafe_allow_html=True)
+        <div class="agent-count" style="color:{color}">{count}x</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
     # ── SECTION 11: Learning Curve (HONEST — real JSONL only) ───────────────
     st.markdown('<div class="section-title">📚  Self-Improvement Loop — Learning Curve</div>', unsafe_allow_html=True)
     st.markdown(f"""
-    <div style="background:{CARD};border:1px solid {BORD};border-radius:10px;padding:18px;margin-bottom:16px">
-        <div style="font-size:14px;color:{TXT};font-weight:600;margin-bottom:8px">How does the agent improve?</div>
-        <div style="font-size:13px;color:{SUB};line-height:1.7">
-            After each episode, a <strong style="color:{TXT}">coach prompt</strong> is sent to the LLM.
-            The coach analyses the 4-axis breakdown and generates a concrete rule change
-            (e.g., "When credit_spread_bps > 500, exit regardless of MACD").
-            That rule is prepended to the agent's system prompt for the next episode.
-            The score should rise over 5+ episodes as the agent internalises better rules.
-            <br><br>
-            <strong style="color:{Y}">Run inference.py to generate real training data.</strong>
-            This chart shows only real episode data from training_metrics.jsonl — no fake numbers.
-        </div>
+<div style="background:{CARD};border:1px solid {BORD};border-radius:10px;padding:18px;margin-bottom:16px">
+    <div style="font-size:14px;color:{TXT};font-weight:600;margin-bottom:8px">How does the agent improve?</div>
+    <div style="font-size:13px;color:{SUB};line-height:1.7">
+        After each episode, a <strong style="color:{TXT}">coach prompt</strong> is sent to the LLM.
+        The coach analyses the 4-axis breakdown and generates a concrete rule change
+        (e.g., "When credit_spread_bps > 500, exit regardless of MACD").
+        That rule is prepended to the agent's system prompt for the next episode.
+        The score should rise over 5+ episodes as the agent internalises better rules.
+        <br><br>
+        <strong style="color:{Y}">Run inference.py to generate real training data.</strong>
+        This chart shows only real episode data from training_metrics.jsonl — no fake numbers.
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
     # Load ONLY real data — never fake seed data
     real_metrics = []
@@ -1575,24 +1575,24 @@ else:
 
     if len(task_metrics) < 2:
         st.markdown(f"""
-        <div style="background:{CARD};border:1px dashed {BORD};border-radius:10px;padding:40px;text-align:center">
-            <div style="font-size:32px;margin-bottom:12px">📊</div>
-            <div style="font-size:15px;font-weight:700;color:{TXT};margin-bottom:8px">
-                {"Only 1 episode recorded." if len(task_metrics) == 1 else "No training data yet for this regime."}
-            </div>
-            <div style="font-size:13px;color:{SUB};line-height:1.7;max-width:500px;margin:0 auto">
-                Run at least 2 episodes to see the learning curve.
-                Each "Run Episode" above adds one real data point.
-                Run <code>inference.py</code> with NUM_RUNS_PER_TASK=5 to generate
-                a full 5-episode curve automatically.
-                <br><br>
-                Current episodes recorded for {REGIMES[task_id]['name']}: <strong style="color:{TXT}">{len(task_metrics)}</strong>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+<div style="background:{CARD};border:1px dashed {BORD};border-radius:10px;padding:40px;text-align:center">
+    <div style="font-size:32px;margin-bottom:12px">📊</div>
+    <div style="font-size:15px;font-weight:700;color:{TXT};margin-bottom:8px">
+        {"Only 1 episode recorded." if len(task_metrics) == 1 else "No training data yet for this regime."}
+    </div>
+    <div style="font-size:13px;color:{SUB};line-height:1.7;max-width:500px;margin:0 auto">
+        Run at least 2 episodes to see the learning curve.
+        Each "Run Episode" above adds one real data point.
+        Run <code>inference.py</code> with NUM_RUNS_PER_TASK=5 to generate
+        a full 5-episode curve automatically.
+        <br><br>
+        Current episodes recorded for {REGIMES[task_id]['name']}: <strong style="color:{TXT}">{len(task_metrics)}</strong>
+    </div>
+</div>
+""", unsafe_allow_html=True)
     else:
-        ep_n  = [m["episode_num"]          for m in task_metrics]
-        sc    = [m["score"]                for m in task_metrics]
+        ep_n  = [m["episode_num"]         for m in task_metrics]
+        sc    = [m["score"]               for m in task_metrics]
         sh    = [max(0, m["sharpe_ratio"]) for m in task_metrics]
 
         # Episode-by-episode callouts (simple, readable by anyone)
@@ -1603,15 +1603,15 @@ else:
             d_str = f"+{delta:.3f} ↑" if delta > 0 else (f"{delta:.3f} ↓" if delta < 0 else "no change")
             updated = " · Used coach update" if m.get("strategy_update_used") else ""
             st.markdown(f"""
-            <div class="curve-callout" style="border-left-color:{d_col}">
-                <div class="curve-ep">Episode {m['episode_num']} — {m['regime']} {updated}</div>
-                Score: <strong style="color:{d_col}">{m['score']:.3f}</strong>
-                {f'<span style="color:{d_col}">({d_str})</span>' if i > 0 else '(baseline)'}
-                &nbsp;·&nbsp; Sharpe: {m['sharpe_ratio']:.2f}
-                &nbsp;·&nbsp; Return: {m['total_return_pct']:+.1f}%
-                &nbsp;·&nbsp; Trades: {m['num_trades']}
-            </div>
-            """, unsafe_allow_html=True)
+<div class="curve-callout" style="border-left-color:{d_col}">
+    <div class="curve-ep">Episode {m['episode_num']} — {m['regime']} {updated}</div>
+    Score: <strong style="color:{d_col}">{m['score']:.3f}</strong>
+    {f'<span style="color:{d_col}">({d_str})</span>' if i > 0 else '(baseline)'}
+    &nbsp;·&nbsp; Sharpe: {m['sharpe_ratio']:.2f}
+    &nbsp;·&nbsp; Return: {m['total_return_pct']:+.1f}%
+    &nbsp;·&nbsp; Trades: {m['num_trades']}
+</div>
+""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
         # Single clean line chart (score only — no spaghetti)
@@ -1675,18 +1675,18 @@ else:
 
     # ── Footer ────────────────────────────────────────────────────────────────
     st.markdown(f"""
-    <div class="footer">
-        <div>
-            <div class="footer-left">TradeSim v3 · Meta × Scaler OpenEnv Grand Finale 2026</div>
-            <div class="footer-sub">4-axis world model · HMM regime detection · Granger causality · Self-improving LLM agent · OpenEnv compliant</div>
-        </div>
-        <div class="badge-row">
-            <div class="badge" style="background:#0a2218;color:{G};border-color:#1a5c3a">OpenEnv ✓</div>
-            <div class="badge" style="background:#0f0f2b;color:{B};border-color:#1a2a5c">Unsloth ✓</div>
-            <div class="badge" style="background:#1f1a00;color:{Y};border-color:#5c3a00">HF Space ✓</div>
-            <div class="badge" style="background:#1f0a1f;color:{P};border-color:#5c1a5c">Granger p=0.044</div>
-        </div>
+<div class="footer">
+    <div>
+        <div class="footer-left">TradeSim v3 · Meta × Scaler OpenEnv Grand Finale 2026</div>
+        <div class="footer-sub">4-axis world model · HMM regime detection · Granger causality · Self-improving LLM agent · OpenEnv compliant</div>
     </div>
-    """, unsafe_allow_html=True)
+    <div class="badge-row">
+        <div class="badge" style="background:#0a2218;color:{G};border-color:#1a5c3a">OpenEnv ✓</div>
+        <div class="badge" style="background:#0f0f2b;color:{B};border-color:#1a2a5c">Unsloth ✓</div>
+        <div class="badge" style="background:#1f1a00;color:{Y};border-color:#5c3a00">HF Space ✓</div>
+        <div class="badge" style="background:#1f0a1f;color:{P};border-color:#5c1a5c">Granger p=0.044</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
