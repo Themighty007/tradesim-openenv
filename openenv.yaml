@@ -1,30 +1,111 @@
 name: "TradeSim"
-version: "1.0.0"
+version: "3.0.0"
 description: >
-  A risk-aware algorithmic trading RL environment. Tests agents across three 
-  market regimes: bull trend, mean reversion, and flash crash survival.
-author: "Themighty007"
+  A causal quantitative trading RL environment. Tests LLM agents across
+  three market regimes (bull trend, mean-reversion, flash crash) using a
+  world model that includes Technical, Fundamental, and Psychological signals.
+  Multi-agent dynamics inject realistic crowd behaviour (panic sellers, FOMO
+  buyers, whales) into the price generation loop. Unsupervised HMMs detect regimes.
+author: "Gowthum Vijaay"
 entrypoint: "environment:TradeSimEnv"
+
+themes:
+  - "Multi-Agent Interactions"
+  - "World Modeling"
+  - "Long-Horizon Planning"
+  - "Self-Improving Agent Systems"
+
 tasks:
   - id: "1"
     name: "bull_trend_following"
     difficulty: "easy"
-    description: "Ride a 15% upward trend with momentum signals."
+    description: >
+      Fed is dovish, earnings are beating, institutional money is flowing in.
+      RSI trends above 50, MACD positive, fear/greed index elevated.
+      Task: identify trend early, size in, hold through noise.
+    expected_score_range: [0.60, 0.80]
+
   - id: "2"
     name: "mean_reversion_choppy"
     difficulty: "medium"
-    description: "Trade Bollinger Band edges in a non-trending range."
+    description: >
+      Mixed fundamentals, neutral sentiment. RSI oscillates 30-70.
+      Bollinger Band breakouts snap back. Task: trade the range extremes,
+      preserve capital, avoid over-trading (every trade costs 0.1%).
+    expected_score_range: [0.35, 0.55]
+
   - id: "3"
     name: "flash_crash_survival"
     difficulty: "hard"
-    description: "Detect and survive a 20% sudden price drop, then recover."
+    description: >
+      A macro shock (earnings miss + Fed hike + supply glut) causes a 35-50%
+      price collapse. Fundamental and psychology signals will telegraph the
+      crash BEFORE prices collapse. Task: exit before the cliff, preserve
+      capital, re-enter during recovery.
+    expected_score_range: [0.15, 0.35]
+
 action_space:
   type: "discrete_with_sizing"
   decisions: ["BUY", "SELL", "HOLD"]
-  position_size: {type: "float", min: 0.0, max: 1.0}
+  position_size:
+    type: "float"
+    min: 0.0
+    max: 1.0
+    description: "Fraction of available cash (BUY) or shares (SELL) to commit"
+
 observation_space:
-  current_price: "float"
-  indicators: ["rsi", "ma20", "macd", "bb_upper", "bb_lower"]
-  portfolio: ["cash", "position", "unrealized_pnl", "total_value"]
-reward_range: [-1.0, 1.0]
-episode_length: 40
+  technical:
+    rsi_14: {type: "float", range: [0, 100]}
+    macd: {type: "float"}
+    macd_signal: {type: "float"}
+    bb_pct: {type: "float"}
+    atr_14: {type: "float", description: "Average True Range"}
+    roc_5: {type: "float", description: "5-period Rate of Change"}
+    volatility_20: {type: "float"}
+  fundamental:
+    earnings_surprise: {type: "float", range: [-1, 1]}
+    fed_rate_change_bps: {type: "float", range: [-100, 100]}
+    supply_shock: {type: "float", range: [-1, 1]}
+    institutional_flow: {type: "float", range: [-1, 1]}
+    credit_spread_bps: {type: "float", description: "High yield spread"}
+    yield_curve_slope: {type: "float", description: "10yr - 2yr yield"}
+  psychology:
+    fear_greed_index: {type: "float", range: [-1, 1]}
+    vix_level: {type: "float", description: "Volatility Index"}
+    put_call_ratio: {type: "float", range: [0, 4]}
+    social_sentiment: {type: "float", range: [-1, 1]}
+    skew: {type: "float", description: "Options skew"}
+  hmm:
+    prob_bull: {type: "float", range: [0, 1]}
+    prob_crash: {type: "float", range: [0, 1]}
+    state_confidence: {type: "float", range: [0, 1]}
+  portfolio:
+    cash: "float"
+    net_worth: "float"
+    equity_fraction: {type: "float", range: [0, 1]}
+    drawdown: {type: "float", range: [0, 1]}
+  active_agents:
+    type: "list[str]"
+    possible_values: ["panic_seller", "fomo_buyer", "whale"]
+
+reward_structure:
+  components:
+    pnl_reward: "SQRT-transformed mark-to-market P&L change"
+    risk_penalty: "Quadratic penalty for equity concentration > 70%"
+    drawdown_penalty: "Super-linear penalty for drawdowns > 5%"
+    survival_bonus: "Crash-regime only: bonus for holding cash during falling market"
+    regime_alignment: "Bonus for trading in the direction of the HMM probability"
+  range: [-1.0, 1.0]
+
+evaluation:
+  axes:
+    technical: {weight: "20%"}
+    fundamental: {weight: "20%"}
+    psychological: {weight: "20%"}
+    hmm_alignment: {weight: "10%"}
+    financial_performance: {weight: "30%"}
+
+self_improvement:
+  description: >
+    Agent receives a 4-axis performance report and coach prompt post-episode. 
+    It generates a strategic directive that is prepended to the next episode's system prompt.

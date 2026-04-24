@@ -1,42 +1,34 @@
 """
-TradeSim — graders.py
-=====================
-Three deterministic grader functions, one per task.
+TradeSim v3 — graders.py
+========================
+FINAL VERSION. New features:
 
-Design Contract
----------------
-  • Input  : EpisodeRecord (full episode history)
-  • Output : GradeResult with score in [0.0, 1.0]
-  • Determinism: same input → identical output, always (no RNG, no I/O)
-  • Partial credit: multiple sub-scores combined, never cliff-edge pass/fail
-  • The spread across difficulty (Task 1 > Task 2 > Task 3) proves graders work
+1. SHARPE RATIO computed from step-level rewards
+   sharpe = (mean(rewards) / std(rewards)) * sqrt(252)
+   This is THE professional metric. Every quant interviewer asks this first.
 
-Grading Philosophy
-------------------
-Each task tests a specific competency:
+2. CALMAR RATIO = annualised return / max drawdown
+   Used by trend-following CTAs (Man AHL, Winton).
+   Measures return per unit of worst-case drawdown.
 
-  Task 1 (Bull) — Can the agent identify a trend and capture it?
-    Sub-metrics: total return, timing (early buy), holding (low churn),
-                 risk management (not reckless leverage).
+3. HMM ALIGNMENT SCORE
+   Did the agent trade WITH the HMM-detected regime?
+   Bull HMM probability + bullish position = aligned = good score.
+   Crash HMM probability + short/cash position = aligned = good score.
 
-  Task 2 (Range) — Can the agent survive without trend-following profit?
-    Sub-metrics: capital preservation, drawdown control, avoidance of
-                 false breakout traps, transaction cost consciousness.
+4. FULL 3-AXIS GRADING (technical + fundamental + psychological)
+   Each axis independently scored, then weighted into final score.
 
-  Task 3 (Crash) — Can the agent detect and survive the crash?
-    Sub-metrics: survival (net worth intact at crash nadir), exit timing
-                 (did it sell before the cliff?), recovery participation
-                 (re-entered during the bounce?), overall drawdown.
-
-Normalisation
--------------
-Each sub-score is independently normalised to [0, 1] using known bounds,
-then weighted-summed, then clipped to [0, 1].
+The combined score formula is designed to:
+- Reward agents that understand ALL THREE axes simultaneously
+- Penalise agents that ONLY trade technically (ignoring fundamentals)
+- Reward psychological resilience (not panicking with the crowd)
 """
 
 from __future__ import annotations
 
 import math
+import numpy as np
 from typing import Callable
 
 from models import (
@@ -49,511 +41,502 @@ from models import (
 
 
 # ---------------------------------------------------------------------------
-# Utility — sigmoid normaliser (smooth, always in (0,1))
+# Utility
 # ---------------------------------------------------------------------------
 
-def _sigmoid(x: float, scale: float = 1.0) -> float:
-    return 1.0 / (1.0 + math.exp(-scale * x))
+def _clamp(v, lo=0.0, hi=1.0): return max(lo, min(hi, v))
 
-
-def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
-    return max(lo, min(hi, v))
-
-
-def _linear_score(value: float, worst: float, best: float) -> float:
-    """Linearly map value from [worst, best] → [0, 1]. Clipped at extremes."""
-    if abs(best - worst) < 1e-12:
-        return 0.5
+def _linear_score(value, worst, best):
+    if abs(best - worst) < 1e-12: return 0.5
     return _clamp((value - worst) / (best - worst))
 
+def _return_score(record, worst, best):
+    return _linear_score(record.total_return, worst, best)
 
-# ---------------------------------------------------------------------------
-# Shared metric extractors
-# ---------------------------------------------------------------------------
-
-def _return_score(record: EpisodeRecord, worst_return: float, best_return: float) -> float:
-    """Sub-score for total return, normalised between worst and best."""
-    return _linear_score(record.total_return, worst_return, best_return)
-
-
-def _drawdown_score(record: EpisodeRecord, worst_dd: float) -> float:
-    """Sub-score for max drawdown. Lower drawdown → higher score."""
-    # worst_dd is the threshold above which we give 0
-    if record.max_drawdown >= worst_dd:
-        return 0.0
+def _drawdown_score(record, worst_dd):
+    if record.max_drawdown >= worst_dd: return 0.0
     return 1.0 - record.max_drawdown / worst_dd
 
+def _churn_score(record, max_trades):
+    return _linear_score(record.num_trades, max_trades, 0)
 
-def _churn_score(record: EpisodeRecord, max_acceptable_trades: int) -> float:
+
+# ---------------------------------------------------------------------------
+# SHARPE RATIO COMPUTATION
+# ---------------------------------------------------------------------------
+
+def compute_sharpe(record: EpisodeRecord, annualise: bool = True) -> float:
     """
-    Sub-score penalising excessive trading.
-    0 trades → perfect score (disciplined HOLD = no churn).
-    Beyond max_acceptable_trades → score 0.
+    Compute Sharpe ratio from step-level portfolio returns.
+    
+    Uses actual net-worth percentage changes (not raw rewards).
+    This is the correct financial Sharpe calculation.
+    
+    Sharpe = (mean_daily_return / std_daily_return) * sqrt(252)
+    
+    A Sharpe > 1.0 is "good". Renaissance Medallion's is ~6.0.
     """
-    return _linear_score(record.num_trades, max_acceptable_trades, 0)
+    if len(record.steps) < 3:
+        return 0.0
+    
+    # Compute step-to-step portfolio returns
+    nw = np.array([s.net_worth for s in record.steps])
+    step_returns = np.diff(nw) / (nw[:-1] + 1e-10)
+    
+    mean_r = np.mean(step_returns)
+    std_r  = np.std(step_returns)
+    
+    if std_r < 1e-10:
+        return 0.0
+    
+    sharpe = mean_r / std_r
+    if annualise:
+        sharpe *= math.sqrt(252)
+    
+    return float(np.clip(sharpe, -10, 20))
 
 
-def _buy_timing_score(record: EpisodeRecord) -> float:
+def compute_calmar(record: EpisodeRecord) -> float:
     """
-    Bull-specific: how early did the agent take a meaningful position?
-
-    Earlier first BUY → higher score.
-    No BUY → 0.0.
+    Calmar ratio = annualised return / max drawdown.
+    
+    Preferred by CTAs (trend-following funds) because it focuses
+    on the worst-case scenario rather than volatility.
+    
+    A Calmar > 0.5 is considered acceptable.
+    A Calmar > 2.0 is considered excellent.
     """
-    n = len(record.steps)
-    for i, step in enumerate(record.steps):
-        if step.action.action_type == ActionType.BUY and step.action.fraction >= 0.1:
-            # Bought in the first 20% → max score
-            frac_through = i / n
-            return _linear_score(frac_through, worst=0.8, best=0.0)
-    return 0.0  # Never bought
+    if record.max_drawdown < 1e-6:
+        return 0.0 if record.total_return <= 0 else 10.0
+    
+    # Approximate annualisation: assume 252 steps per year
+    episodes_per_year = 252.0 / max(len(record.steps), 1)
+    annualised_return = record.total_return * episodes_per_year
+    
+    calmar = annualised_return / record.max_drawdown
+    return float(np.clip(calmar, -10, 10))
 
 
-def _equity_peak_capture(record: EpisodeRecord) -> float:
+# ---------------------------------------------------------------------------
+# AXIS 1: Technical competency
+# ---------------------------------------------------------------------------
+
+def grade_technical(record: EpisodeRecord) -> float:
     """
-    Bull-specific: did the agent's peak net worth actually track the market peak?
-
-    Compare agent's peak net worth to a theoretical all-in passive strategy.
+    Score: did the agent correctly read and ACT on technical signals?
+    
+    Correct behaviours:
+    - RSI > 70 (overbought) → SELL or HOLD (not BUY)
+    - RSI < 30 (oversold)   → BUY or HOLD (not SELL)
+    - MACD bullish cross    → BUY
+    - MACD bearish cross    → SELL
+    - BB upper breach       → SELL (stretched)
+    - BB lower breach       → BUY (oversold)
+    - High ATR (volatility) → HOLD or small position (risk management)
     """
     if not record.steps:
         return 0.0
 
-    initial = record.initial_capital
-    passive_peak = max(
-        initial * (s.price / record.steps[0].price)
-        for s in record.steps
-    )
-    agent_peak = record.peak_net_worth
-    return _linear_score(agent_peak, worst=initial, best=passive_peak)
+    correct = 0
+    total   = 0
+
+    for step in record.steps:
+        t = step.technical
+        action = step.action.action_type
+
+        if t.rsi_14 > 70:
+            total += 1
+            if action in (ActionType.SELL, ActionType.HOLD): correct += 1
+
+        elif t.rsi_14 < 30:
+            total += 1
+            if action in (ActionType.BUY, ActionType.HOLD): correct += 1
+
+        if t.macd > t.macd_signal and t.macd > 0:
+            if action == ActionType.BUY:
+                total += 1; correct += 1
+
+        if t.macd < t.macd_signal and t.macd < 0:
+            if action == ActionType.SELL:
+                total += 1; correct += 1
+
+        if t.bb_pct > 1.0 and action == ActionType.SELL:
+            total += 1; correct += 1
+
+        if t.bb_pct < 0.0 and action == ActionType.BUY:
+            total += 1; correct += 1
+
+        # ATR risk management: high volatility → avoid large positions
+        if t.atr_14 > 2.0 and action == ActionType.BUY and step.action.fraction > 0.7:
+            total += 1  # Penalise: large buy in high vol without caution
+        elif t.atr_14 > 2.0 and action == ActionType.BUY and step.action.fraction <= 0.5:
+            total += 1; correct += 1  # Reward: cautious sizing in high vol
+
+    if total == 0:
+        return 0.3
+    return _clamp(correct / total)
 
 
 # ---------------------------------------------------------------------------
-# Task 1 — Bull Market Grader
+# AXIS 2: Fundamental competency
 # ---------------------------------------------------------------------------
 
-def grade_task1(record: EpisodeRecord) -> GradeResult:
+def grade_fundamental(record: EpisodeRecord) -> float:
     """
-    Task 1: Bull Market
-
-    Expected agent behaviour:
-      • Buy early (first 20% of episode)
-      • Hold through the trend (low churn)
-      • Capture most of the upside (good return)
-      • Don't use reckless leverage
-
-    Expected score range: 0.65–0.80 for a reasonable agent.
+    Score: did the agent correctly respond to economic fundamentals?
+    
+    Correct behaviours:
+    - Fed hike > 25bps        → SELL (bonds more attractive, equities fall)
+    - Fed cut < -15bps        → BUY (rate cut = equity bullish)
+    - Earnings beat > 0.4     → BUY (PEAD: post-earnings announcement drift)
+    - Earnings miss < -0.4    → SELL (negative PEAD)
+    - Supply shock < -0.5     → SELL (supply glut = bearish)
+    - Credit spread > 600bps  → SELL (credit stress = systemic risk)
+    - Yield curve inverted     → REDUCE exposure (recession warning)
     """
-    assert record.regime == MarketRegime.BULL, f"Task 1 expects BULL regime; got {record.regime}"
-
-    weights = {
-        "return":       0.35,   # Total P&L matters most in a bull market
-        "peak_capture": 0.25,   # Did it ride the actual upswing?
-        "buy_timing":   0.20,   # Early entry is critical
-        "drawdown":     0.10,   # Shouldn't have deep drawdown in a bull
-        "churn":        0.10,   # Disciplined holding > nervous trading
-    }
-
-    sub = {
-        # Bull returns +12% passively. An LLM scoring 0.65–0.80 should capture 6–10%
-        "return":       _return_score(record, worst_return=-0.02, best_return=0.12),
-        "peak_capture": _equity_peak_capture(record),
-        "buy_timing":   _buy_timing_score(record),
-        "drawdown":     _drawdown_score(record, worst_dd=0.15),
-        "churn":        _churn_score(record, max_acceptable_trades=12),
-    }
-
-    score = _clamp(sum(weights[k] * sub[k] for k in weights))
-
-    return GradeResult(
-        task=1,
-        score=score,
-        breakdown={k: round(v, 4) for k, v in sub.items()},
-        rationale=(
-            f"Bull market score: return={sub['return']:.3f}, "
-            f"peak_capture={sub['peak_capture']:.3f}, "
-            f"buy_timing={sub['buy_timing']:.3f}, "
-            f"drawdown={sub['drawdown']:.3f}, "
-            f"churn={sub['churn']:.3f}. "
-            f"Weighted total: {score:.4f}"
-        ),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Task 2 — Choppy Range Grader
-# ---------------------------------------------------------------------------
-
-def grade_task2(record: EpisodeRecord) -> GradeResult:
-    """
-    Task 2: Choppy Range Market
-
-    Expected agent behaviour:
-      • Don't lose money (capital preservation)
-      • Avoid false breakouts (don't FOMO buy at spikes)
-      • Keep drawdowns tight (mean-revert, don't trend-follow)
-      • Trade lightly (friction kills in a sideways market)
-
-    Expected score range: 0.35–0.55 for a reasonable agent.
-    """
-    assert record.regime == MarketRegime.RANGE, f"Task 2 expects RANGE regime; got {record.regime}"
-
-    weights = {
-        "preservation": 0.20,   # Don't lose money
-        "drawdown":     0.15,   # Tight drawdown = good risk management
-        "engagement":   0.50,   # Must DEMONSTRATE range-trading skill (not just HOLD)
-        "churn":        0.075,  # Excessive trading kills in sideways market
-        "return":       0.075,  # Small positive return is a bonus
-    }
-
-    # Engagement: peak at 3-6 disciplined trades (demonstrates range-reading skill)
-    # Pure HOLD = 0 skill shown; 20 mechanical trades = gambling, not skill
-    num_trades = record.num_trades
-    if num_trades == 0:
-        engagement = 0.0
-    elif num_trades <= 6:
-        engagement = min(1.0, num_trades / 5.0)     # Ramp: 5 trades = 1.0
-    elif num_trades <= 12:
-        engagement = 1.0 - (num_trades - 6) / 12.0  # Gentle decay 6→12
-    else:
-        engagement = _clamp(1.0 - num_trades / 20.0) # Steep decay above 12
-
-    sub = {
-        "preservation": _return_score(record, worst_return=-0.08, best_return=0.04),
-        "drawdown":     _drawdown_score(record, worst_dd=0.10),
-        "engagement":   _clamp(engagement),
-        "churn":        _churn_score(record, max_acceptable_trades=8),
-        "return":       _return_score(record, worst_return=-0.06, best_return=0.06),
-    }
-
-    score = _clamp(sum(weights[k] * sub[k] for k in weights))
-
-    return GradeResult(
-        task=2,
-        score=score,
-        breakdown={k: round(v, 4) for k, v in sub.items()},
-        rationale=(
-            f"Range market score: preservation={sub['preservation']:.3f}, "
-            f"drawdown={sub['drawdown']:.3f}, "
-            f"engagement={sub['engagement']:.3f}, "
-            f"churn={sub['churn']:.3f}, "
-            f"return={sub['return']:.3f}. "
-            f"Weighted total: {score:.4f}"
-        ),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Task 3 — Flash Crash Grader
-# ---------------------------------------------------------------------------
-
-def _crash_survival_score(record: EpisodeRecord) -> float:
-    """
-    Did the agent actually TRADE into the pre-crash calm and then EXIT?
-
-    This is the critical distinction: an agent that never buys trivially
-    'survives' the crash but showed no skill. We require:
-      (a) agent held meaningful equity BEFORE the crash midpoint
-      (b) agent had low equity AT the crash nadir
-
-    Score = (pre_crash_participation) × (nadir_cash_fraction)
-
-    An agent that was all-cash the entire episode scores ZERO.
-    An agent that bought early and exited before the nadir scores HIGH.
-    """
-    steps = record.steps
-    n = len(steps)
-    if n < 20:
+    if not record.steps:
         return 0.0
 
-    # Find the nadir (price minimum)
+    correct = 0
+    total   = 0
+
+    for step in record.steps:
+        f = step.fundamental
+        action = step.action.action_type
+
+        if f.fed_rate_change_bps > 25:
+            total += 1
+            if action in (ActionType.SELL, ActionType.HOLD): correct += 1
+
+        elif f.fed_rate_change_bps < -15:
+            total += 1
+            if action in (ActionType.BUY, ActionType.HOLD): correct += 1
+
+        if f.earnings_surprise > 0.4:
+            total += 1
+            if action == ActionType.BUY: correct += 1
+
+        elif f.earnings_surprise < -0.4:
+            total += 1
+            if action in (ActionType.SELL, ActionType.HOLD): correct += 1
+
+        if f.supply_shock < -0.5:
+            total += 1
+            if action in (ActionType.SELL, ActionType.HOLD): correct += 1
+
+        # Credit spread signal: widening spreads = systemic stress
+        if f.credit_spread_bps > 600:
+            total += 1
+            if action in (ActionType.SELL, ActionType.HOLD): correct += 1
+
+        # Inverted yield curve = recession warning → reduce exposure
+        if f.yield_curve_slope < -0.3:
+            total += 1
+            if step.equity_fraction < 0.5: correct += 1  # Reduced exposure = correct
+
+        # Strong institutional buying = hold/buy
+        if f.institutional_flow > 0.5 and step.equity_fraction > 0.3:
+            total += 1; correct += 1
+
+    if total == 0:
+        return 0.4
+    return _clamp(correct / total)
+
+
+# ---------------------------------------------------------------------------
+# AXIS 3: Psychological competency
+# ---------------------------------------------------------------------------
+
+def grade_psychological(record: EpisodeRecord) -> float:
+    """
+    Score: did the agent FADE crowd psychology extremes?
+    
+    Contrarian rules:
+    - Fear/greed > 0.80 (extreme greed) → SELL (top signal)
+    - Fear/greed < -0.70 (extreme fear) → BUY (bottom signal)  
+    - VIX > 35 (fear spike) + BUY = contrarian correct
+    - Put/call > 2.0 + BUY = correct (everyone hedged = often bottom)
+    - Social euphoria > 0.75 + SELL = contrarian correct
+    - Insider buying > 0.5 + BUY = following smart money = correct
+    """
+    if not record.steps:
+        return 0.0
+
+    smart  = 0
+    traps  = 0
+    total  = 0
+
+    for step in record.steps:
+        ps = step.psychology
+        action = step.action.action_type
+
+        if ps.fear_greed_index > 0.80:
+            total += 1
+            if action in (ActionType.SELL, ActionType.HOLD): smart += 1
+            elif action == ActionType.BUY: traps += 1
+
+        elif ps.fear_greed_index < -0.70:
+            total += 1
+            if action in (ActionType.BUY, ActionType.HOLD): smart += 1
+            elif action == ActionType.SELL: traps += 1
+
+        # VIX spike: fear is highest at bottoms
+        if ps.vix_level > 35:
+            total += 1
+            if action == ActionType.BUY: smart += 1  # Buying during fear spike
+            elif action == ActionType.SELL: traps += 1
+
+        # High put/call = bottoming signal
+        if ps.put_call_ratio > 2.0 and action == ActionType.BUY:
+            total += 1; smart += 1
+
+        # Social euphoria: retail frenzy = sell signal
+        if ps.social_sentiment > 0.75 and action == ActionType.SELL:
+            total += 1; smart += 1
+
+        # Insider buying: smart money
+        if ps.insider_buying > 0.5 and action == ActionType.BUY:
+            total += 1; smart += 1
+
+        # Extreme negative skew = massive downside hedging = crash imminent
+        if ps.skew < -0.30 and action in (ActionType.SELL, ActionType.HOLD):
+            total += 1; smart += 1
+
+    if total == 0:
+        return _churn_score(record, max_trades=15)
+
+    base = _clamp(smart / total)
+    trap_penalty = _clamp(traps / max(total, 1)) * 0.3
+    return _clamp(base - trap_penalty)
+
+
+# ---------------------------------------------------------------------------
+# HMM ALIGNMENT SCORE
+# ---------------------------------------------------------------------------
+
+def grade_hmm_alignment(record: EpisodeRecord) -> float:
+    """
+    Score: did the agent position itself correctly based on
+    the HMM regime detector's output?
+    
+    Bull HMM probability > 0.7 + equity fraction > 0.5 = aligned
+    Crash HMM probability > 0.7 + equity fraction < 0.3 = aligned
+    
+    This rewards agents that learn to use the unsupervised regime
+    signal, not just the labelled regime hint.
+    """
+    if not record.steps:
+        return 0.5
+
+    aligned = 0
+    total   = 0
+
+    for step in record.steps:
+        hmm = step.hmm
+        eq  = step.equity_fraction
+
+        if hmm.state_confidence < 0.6:
+            continue  # HMM is uncertain, don't score
+
+        total += 1
+
+        if hmm.prob_bull > 0.7:
+            # HMM says bull regime — being invested is correct
+            if eq > 0.4: aligned += 1
+
+        elif hmm.prob_crash > 0.7:
+            # HMM says crash regime — being in cash is correct
+            if eq < 0.4: aligned += 1
+
+    if total == 0:
+        return 0.5
+    return _clamp(aligned / total)
+
+
+# ---------------------------------------------------------------------------
+# Shared financial metric extractors
+# ---------------------------------------------------------------------------
+
+def _buy_timing_score(record):
+    n = len(record.steps)
+    for i, step in enumerate(record.steps):
+        if step.action.action_type == ActionType.BUY and step.action.fraction >= 0.1:
+            frac_through = i / n
+            return _linear_score(frac_through, worst=0.8, best=0.0)
+    return 0.0
+
+def _equity_peak_capture(record):
+    if not record.steps: return 0.0
+    initial = record.initial_capital
+    passive_peak = max(initial * (s.price / record.steps[0].price) for s in record.steps)
+    return _linear_score(record.peak_net_worth, worst=initial, best=passive_peak)
+
+def _crash_survival_score(record):
+    steps = record.steps
+    n = len(steps)
+    if n < 20: return 0.0
     prices = [s.price for s in steps]
     nadir_idx = prices.index(min(prices))
-
-    # Pre-crash window: first third of steps up to nadir
     pre_crash_end = min(nadir_idx, n // 3)
-    if pre_crash_end < 5:
-        pre_crash_end = min(nadir_idx, n // 4)
-
+    if pre_crash_end < 5: pre_crash_end = min(nadir_idx, n // 4)
     pre_crash_steps = steps[:max(pre_crash_end, 1)]
     nadir_step = steps[nadir_idx]
-
-    # (a) Did the agent hold equity before the crash?
     avg_pre_equity = sum(s.equity_fraction for s in pre_crash_steps) / max(len(pre_crash_steps), 1)
-    # Require at least 10% average equity pre-crash to demonstrate participation
-    participation_score = _clamp(avg_pre_equity / 0.30)  # full credit at 30%+ avg equity
-
-    # (b) Did the agent exit before/at the nadir?
+    participation_score = _clamp(avg_pre_equity / 0.30)
     cash_at_nadir = 1.0 - nadir_step.equity_fraction
-    exit_score = cash_at_nadir  # 1.0 = all cash at bottom
+    return _clamp(participation_score * cash_at_nadir)
 
-    # Combined: must score on BOTH dimensions
-    combined = participation_score * exit_score
-
-    return _clamp(combined)
-
-
-
-def _crash_exit_timing_score(record: EpisodeRecord) -> float:
-    """
-    Did the agent SELL before the crash cliff destroyed significant value?
-
-    We define a "good exit window" as any SELL executed before prices drop
-    more than 8% from their episode peak. An exit at 20%+ down scores poorly.
-
-    Timing tiers:
-      - Exit before 5% drop from peak  → score ~0.90
-      - Exit before 10% drop           → score ~0.60
-      - Exit before 20% drop           → score ~0.25
-      - Exit after 20%+ drop           → score ~0.05
-      - Never exits (holds through)    → score  0.0
-
-    An LLM agent typically exits late (10-20% drop) → scores 0.25–0.60.
-    """
+def _crash_exit_timing_score(record):
     steps = record.steps
-    n = len(steps)
-    if n < 10:
-        return 0.0
-
+    if len(steps) < 10: return 0.0
     prices = [s.price for s in steps]
     peak_price = max(prices)
-
-    # Find the earliest meaningful SELL (fraction >= 0.25, reduces equity >10%)
-    for i, step in enumerate(steps):
+    for step in steps:
         if step.action.action_type == ActionType.SELL and step.action.fraction >= 0.25:
-            sell_price = step.price
-            drop_from_peak = (peak_price - sell_price) / peak_price  # 0 = sold at peak, 1 = sold at zero
+            drop = (peak_price - step.price) / peak_price
+            if drop <= 0.0: return 1.0
+            return _clamp(math.exp(-drop * 8.0))
+    return 0.0
 
-            # Tiered scoring: exponential decay as drop increases
-            # Sold at peak (drop=0)  → 1.0
-            # Sold at 5% drop        → ~0.75
-            # Sold at 15% drop       → ~0.35
-            # Sold at 30%+ drop      → ~0.05
-            if drop_from_peak <= 0.0:
-                return 1.0
-            score = math.exp(-drop_from_peak * 8.0)
-            return _clamp(score)
-
-    return 0.0  # Never sold — no exit credit
-
-
-def _crash_recovery_score(record: EpisodeRecord) -> float:
-    """
-    Did the agent re-enter during the recovery phase?
-
-    Approximate recovery start as after the lowest price point.
-    Check if the agent has meaningful equity in the second half.
-    """
+def _crash_recovery_score(record):
     steps = record.steps
     n = len(steps)
-    if n < 10:
-        return 0.0
-
-    # Find the nadir (lowest price)
+    if n < 10: return 0.0
     prices = [s.price for s in steps]
     nadir_idx = prices.index(min(prices))
-
-    # Look at second half (post-nadir)
     recovery_steps = steps[nadir_idx:]
-    if not recovery_steps:
-        return 0.0
-
-    # Average equity fraction in recovery phase
-    avg_equity_in_recovery = sum(s.equity_fraction for s in recovery_steps) / len(recovery_steps)
-
-    # Also check if net worth grew in recovery phase
+    if not recovery_steps: return 0.0
+    avg_eq = sum(s.equity_fraction for s in recovery_steps) / len(recovery_steps)
     if len(recovery_steps) >= 2:
-        recovery_return = (recovery_steps[-1].net_worth - recovery_steps[0].net_worth) / max(recovery_steps[0].net_worth, 1.0)
+        rec_ret = (recovery_steps[-1].net_worth - recovery_steps[0].net_worth) / max(recovery_steps[0].net_worth, 1.0)
     else:
-        recovery_return = 0.0
+        rec_ret = 0.0
+    return _clamp(0.6 * avg_eq + 0.4 * _linear_score(rec_ret, -0.05, 0.10))
 
-    # Score combines equity participation and actual gains
-    participation_score = avg_equity_in_recovery  # Higher equity in recovery = better
-    gain_score = _linear_score(recovery_return, worst=-0.05, best=0.10)
 
-    return _clamp(0.6 * participation_score + 0.4 * gain_score)
+# ---------------------------------------------------------------------------
+# Task graders
+# ---------------------------------------------------------------------------
+
+def _make_grade_result(
+    task: int,
+    fin_score: float,
+    tech_score: float,
+    fund_score: float,
+    psych_score: float,
+    hmm_score: float,
+    record: EpisodeRecord,
+    sub: dict,
+    weights: dict,
+    axis_weights: dict,
+) -> GradeResult:
+    """Helper: compute final score and build GradeResult with all metrics."""
+    score = _clamp(
+        sum(weights[k] * sub[k] for k in weights)
+        + axis_weights["technical"]    * tech_score
+        + axis_weights["fundamental"]  * fund_score
+        + axis_weights["psychological"] * psych_score
+        + axis_weights["hmm"]          * hmm_score
+    )
+
+    sharpe  = compute_sharpe(record)
+    calmar  = compute_calmar(record)
+    n_steps = len(record.steps)
+
+    return GradeResult(
+        task=task,
+        score=score,
+        breakdown={
+            **{k: round(v, 4) for k, v in sub.items()},
+            "technical":     round(tech_score, 4),
+            "fundamental":   round(fund_score, 4),
+            "psychological": round(psych_score, 4),
+            "hmm_alignment": round(hmm_score, 4),
+        },
+        rationale=(
+            f"Task {task}: score={score:.4f} | "
+            f"Sharpe={sharpe:.2f} Calmar={calmar:.2f} | "
+            f"tech={tech_score:.3f} fund={fund_score:.3f} "
+            f"psych={psych_score:.3f} hmm={hmm_score:.3f}"
+        ),
+        sharpe_ratio=sharpe,
+        calmar_ratio=calmar,
+        max_drawdown=record.max_drawdown,
+        total_return_pct=record.total_return * 100,
+        num_trades=record.num_trades,
+        technical_score=tech_score,
+        fundamental_score=fund_score,
+        psychological_score=psych_score,
+        hmm_alignment_score=hmm_score,
+    )
+
+
+def grade_task1(record: EpisodeRecord) -> GradeResult:
+    assert record.regime == MarketRegime.BULL
+    weights      = {"return": 0.20, "peak_capture": 0.15, "buy_timing": 0.12, "drawdown": 0.08, "churn": 0.08}
+    axis_weights = {"technical": 0.10, "fundamental": 0.10, "psychological": 0.07, "hmm": 0.10}
+    sub = {
+        "return":       _return_score(record, -0.02, 0.12),
+        "peak_capture": _equity_peak_capture(record),
+        "buy_timing":   _buy_timing_score(record),
+        "drawdown":     _drawdown_score(record, 0.15),
+        "churn":        _churn_score(record, 12),
+    }
+    return _make_grade_result(
+        1, sum(weights[k]*sub[k] for k in weights),
+        grade_technical(record), grade_fundamental(record),
+        grade_psychological(record), grade_hmm_alignment(record),
+        record, sub, weights, axis_weights
+    )
+
+
+def grade_task2(record: EpisodeRecord) -> GradeResult:
+    assert record.regime == MarketRegime.RANGE
+    num_trades = record.num_trades
+    if num_trades == 0: engagement = 0.0
+    elif num_trades <= 6: engagement = min(1.0, num_trades / 5.0)
+    elif num_trades <= 12: engagement = 1.0 - (num_trades - 6) / 12.0
+    else: engagement = _clamp(1.0 - num_trades / 20.0)
+
+    weights      = {"preservation": 0.12, "drawdown": 0.08, "engagement": 0.25, "churn": 0.05, "return": 0.05}
+    axis_weights = {"technical": 0.18, "fundamental": 0.10, "psychological": 0.10, "hmm": 0.07}
+    sub = {
+        "preservation": _return_score(record, -0.08, 0.04),
+        "drawdown":     _drawdown_score(record, 0.10),
+        "engagement":   _clamp(engagement),
+        "churn":        _churn_score(record, 8),
+        "return":       _return_score(record, -0.06, 0.06),
+    }
+    return _make_grade_result(
+        2, sum(weights[k]*sub[k] for k in weights),
+        grade_technical(record), grade_fundamental(record),
+        grade_psychological(record), grade_hmm_alignment(record),
+        record, sub, weights, axis_weights
+    )
 
 
 def grade_task3(record: EpisodeRecord) -> GradeResult:
-    """
-    Task 3: Flash Crash
-
-    Expected agent behaviour:
-      • Get out before or during the crash (exit timing)
-      • Survive with capital mostly intact (survival)
-      • Re-enter during recovery (recovery participation)
-      • Maintain low max drawdown overall
-
-    Expected score range: 0.15–0.35 for a reasonable agent.
-    """
-    assert record.regime == MarketRegime.CRASH, f"Task 3 expects CRASH regime; got {record.regime}"
-
-    weights = {
-        "survival":   0.35,   # Did you participate pre-crash AND exit?
-        "exit_timing":0.35,   # How early did you exit? (exponential decay)
-        "drawdown":   0.15,   # Overall capital control
-        "recovery":   0.15,   # Re-entered during bounce? (hardest part)
-    }
-
+    assert record.regime == MarketRegime.CRASH
+    weights      = {"survival": 0.20, "exit_timing": 0.20, "drawdown": 0.08, "recovery": 0.08}
+    axis_weights = {"technical": 0.10, "fundamental": 0.14, "psychological": 0.12, "hmm": 0.08}
     sub = {
         "survival":    _crash_survival_score(record),
         "exit_timing": _crash_exit_timing_score(record),
-        "drawdown":    _drawdown_score(record, worst_dd=0.35),
+        "drawdown":    _drawdown_score(record, 0.35),
         "recovery":    _crash_recovery_score(record),
     }
-
-    score = _clamp(sum(weights[k] * sub[k] for k in weights))
-
-    return GradeResult(
-        task=3,
-        score=score,
-        breakdown={k: round(v, 4) for k, v in sub.items()},
-        rationale=(
-            f"Crash score: survival={sub['survival']:.3f}, "
-            f"exit_timing={sub['exit_timing']:.3f}, "
-            f"drawdown={sub['drawdown']:.3f}, "
-            f"recovery={sub['recovery']:.3f}. "
-            f"Weighted total: {score:.4f}"
-        ),
+    return _make_grade_result(
+        3, sum(weights[k]*sub[k] for k in weights),
+        grade_technical(record), grade_fundamental(record),
+        grade_psychological(record), grade_hmm_alignment(record),
+        record, sub, weights, axis_weights
     )
 
 
-# ---------------------------------------------------------------------------
-# Unified dispatcher
-# ---------------------------------------------------------------------------
-
-_GRADERS: dict[int, Callable[[EpisodeRecord], GradeResult]] = {
-    1: grade_task1,
-    2: grade_task2,
-    3: grade_task3,
-}
-
-_REGIME_TO_TASK: dict[MarketRegime, int] = {
-    MarketRegime.BULL:  1,
-    MarketRegime.RANGE: 2,
-    MarketRegime.CRASH: 3,
-}
+_GRADERS = {1: grade_task1, 2: grade_task2, 3: grade_task3}
+_REGIME_TO_TASK = {MarketRegime.BULL: 1, MarketRegime.RANGE: 2, MarketRegime.CRASH: 3}
 
 
 def grade_episode(record: EpisodeRecord) -> GradeResult:
-    """
-    Grade a completed episode, auto-selecting the correct grader.
-
-    Parameters
-    ----------
-    record : Completed EpisodeRecord
-
-    Returns
-    -------
-    GradeResult with score in [0.0, 1.0].
-    """
     task = _REGIME_TO_TASK[record.regime]
     return _GRADERS[task](record)
-
-
-# ---------------------------------------------------------------------------
-# Self-test (run as __main__)
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    import random
-    from models import (
-        Action, ActionType, MarketRegime,
-        RewardBreakdown, StepRecord,
-    )
-
-    def make_step(
-        t: int,
-        action_type: ActionType,
-        fraction: float,
-        price: float,
-        net_worth: float,
-        peak: float,
-        equity: float,
-    ) -> StepRecord:
-        dd = max(0.0, 1.0 - net_worth / peak) if peak > 0 else 0.0
-        return StepRecord(
-            timestep=t,
-            action=Action(action_type=action_type, fraction=fraction),
-            reward=RewardBreakdown(
-                pnl_reward=0.01, risk_penalty=0.0, drawdown_penalty=0.0,
-                turnover_penalty=0.0, survival_bonus=0.0, total=0.01
-            ),
-            net_worth=net_worth,
-            drawdown=dd,
-            equity_fraction=equity,
-            price=price,
-        )
-
-    def build_bull_perfect(n: int = 100) -> EpisodeRecord:
-        """Perfect agent: buys on step 1, holds, ends with big gain."""
-        steps = []
-        for t in range(n):
-            price = 100.0 + t * 0.2   # steady uptrend
-            action = ActionType.BUY if t == 1 else ActionType.HOLD
-            frac   = 0.90 if t == 1 else 0.0
-            nw     = 100_000.0 + (price - 100.0) * 900   # ~900 shares
-            steps.append(make_step(t, action, frac, price, nw, max(100_000.0, nw), 0.90))
-        return EpisodeRecord(regime=MarketRegime.BULL, initial_capital=100_000.0, steps=steps)
-
-    def build_bull_terrible(n: int = 100) -> EpisodeRecord:
-        """Terrible agent: holds all cash, never buys."""
-        steps = []
-        for t in range(n):
-            price = 100.0 + t * 0.2
-            steps.append(make_step(t, ActionType.HOLD, 0.0, price, 100_000.0, 100_000.0, 0.0))
-        return EpisodeRecord(regime=MarketRegime.BULL, initial_capital=100_000.0, steps=steps)
-
-    def build_crash_perfect(n: int = 100) -> EpisodeRecord:
-        """Perfect crash agent: holds cash, doesn't buy at all."""
-        steps = []
-        prices = ([100.0] * 25 + [100.0 - i * 3 for i in range(20)]
-                  + [40.0 + i * 0.5 for i in range(55)])
-        for t in range(n):
-            price = prices[t] if t < len(prices) else 68.0
-            steps.append(make_step(t, ActionType.HOLD, 0.0, price, 100_000.0, 100_000.0, 0.0))
-        return EpisodeRecord(regime=MarketRegime.CRASH, initial_capital=100_000.0, steps=steps)
-
-    def build_crash_terrible(n: int = 100) -> EpisodeRecord:
-        """Terrible crash agent: goes all-in, rides the crash all the way down."""
-        steps = []
-        prices = ([100.0] * 25 + [100.0 - i * 3 for i in range(20)]
-                  + [40.0 + i * 0.5 for i in range(55)])
-        for t in range(n):
-            price = prices[t] if t < len(prices) else 68.0
-            nw = 100_000.0 * (price / 100.0)
-            peak = max(100_000.0, 100_000.0 * (max(prices[:t+1]) / 100.0))
-            action = ActionType.BUY if t == 0 else ActionType.HOLD
-            frac   = 0.95 if t == 0 else 0.0
-            steps.append(make_step(t, action, frac, price, nw, peak, 0.95 if price > 0 else 0.0))
-        return EpisodeRecord(regime=MarketRegime.CRASH, initial_capital=100_000.0, steps=steps)
-
-    print("=" * 60)
-    print("Grader Verification")
-    print("=" * 60)
-
-    # Task 1
-    bull_perf  = grade_task1(build_bull_perfect())
-    bull_terr  = grade_task1(build_bull_terrible())
-    print(f"\nTask 1 (Bull):")
-    print(f"  Perfect agent : {bull_perf.score:.4f}  ← should be > 0.55")
-    print(f"  Terrible agent: {bull_terr.score:.4f}  ← should be < 0.25")
-    assert bull_perf.score > bull_terr.score, "Perfect should beat terrible"
-    assert bull_perf.score > 0.40, f"Perfect bull score too low: {bull_perf.score}"
-
-    # Task 3
-    crash_perf = grade_task3(build_crash_perfect())
-    crash_terr = grade_task3(build_crash_terrible())
-    print(f"\nTask 3 (Crash):")
-    print(f"  Perfect agent (cash) : {crash_perf.score:.4f}  ← should be > 0.35")
-    print(f"  Terrible agent (HODL): {crash_terr.score:.4f}  ← should be < 0.25")
-    assert crash_perf.score > crash_terr.score, "Cash survival should beat all-in crash"
-
-    print(f"\nBreakdown (perfect bull):")
-    for k, v in bull_perf.breakdown.items():
-        print(f"  {k:20s}: {v:.4f}")
-
-    print("\n✓ All grader tests passed.")
-    print("\nExpected difficulty spread:")
-    print(f"  Task 1 (bull)  → ~0.65–0.80  (grader designed for this range)")
-    print(f"  Task 2 (range) → ~0.35–0.55  (grader designed for this range)")
-    print(f"  Task 3 (crash) → ~0.15–0.35  (grader designed for this range)")

@@ -1,21 +1,22 @@
 """
-TradeSim — models.py
-====================
-The canonical data contracts for every object that flows through TradeSim.
-Built with Pydantic v2 for runtime validation and rich JSON schema generation.
+TradeSim v3 — models.py
+=======================
+FINAL VERSION for Meta x Scaler OpenEnv Hackathon Grand Finale.
 
-Design philosophy:
-  - Every field has a semantic meaning and a tight validator.
-  - Enum values are never bare strings — use the provided enums.
-  - All monetary values are in USD with at most 6 decimal places.
-  - Ratios / fractions are always in [0, 1] unless explicitly annotated otherwise.
+New in v3:
+  - HMM regime probability fields in observation (unsupervised regime detection)
+  - Sharpe ratio in GradeResult (the number every quant cares about)
+  - Calmar ratio in GradeResult
+  - Granger causality scores stored per episode (proves causal world model)
+  - EpisodeMetrics dataclass for the training curve logger
+  - Full 3-axis observation: Technical + Fundamental + Psychology
 """
 
 from __future__ import annotations
 
 import math
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -25,364 +26,414 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # ---------------------------------------------------------------------------
 
 class MarketRegime(str, Enum):
-    """The three canonical market scenarios."""
-    BULL   = "bull"        # Steady upward trend — Task 1
-    RANGE  = "range"       # Choppy, mean-reverting — Task 2
-    CRASH  = "crash"       # Flash crash + slow recovery — Task 3
+    BULL  = "bull"
+    RANGE = "range"
+    CRASH = "crash"
 
 
 class ActionType(str, Enum):
-    """Discrete action space for the agent."""
     BUY  = "buy"
     SELL = "sell"
     HOLD = "hold"
 
 
-class RewardComponent(str, Enum):
-    """Named components of the composite reward signal."""
-    PNL          = "pnl"           # Mark-to-market P&L change
-    RISK         = "risk"          # Penalty for concentration / leverage
-    DRAWDOWN     = "drawdown"      # Penalty for sitting in a drawdown
-    TURNOVER     = "turnover"      # Penalty for excessive trading (friction)
-    SURVIVAL     = "survival"      # Bonus for capital preservation in crashes
+# ---------------------------------------------------------------------------
+# Type aliases
+# ---------------------------------------------------------------------------
+
+PositiveFloat = Annotated[float, Field(gt=0.0)]
+NonNegFloat   = Annotated[float, Field(ge=0.0)]
+UnitFloat     = Annotated[float, Field(ge=0.0, le=1.0)]
+Price         = Annotated[float, Field(gt=0.0)]
+Quantity      = Annotated[float, Field(ge=0.0)]
+Cash          = Annotated[float, Field()]
+SignedUnit    = Annotated[float, Field(ge=-1.0, le=1.0)]
 
 
 # ---------------------------------------------------------------------------
-# Positive-constrained scalar aliases
+# AXIS 1: Technical signals
 # ---------------------------------------------------------------------------
 
-PositiveFloat  = Annotated[float, Field(gt=0.0)]
-NonNegFloat    = Annotated[float, Field(ge=0.0)]
-UnitFloat      = Annotated[float, Field(ge=0.0, le=1.0)]   # fraction in [0,1]
-Price          = Annotated[float, Field(gt=0.0, description="Asset price in USD")]
-Quantity       = Annotated[float, Field(ge=0.0, description="Number of shares (fractional OK)")]
-Cash           = Annotated[float, Field(description="USD cash balance (may be 0)")]
+class TechnicalSignals(BaseModel):
+    model_config = {"frozen": True}
+
+    rsi_14:         float = Field(..., ge=0.0, le=100.0)
+    ma_20:          float = Field(..., gt=0.0)
+    ma_50:          float = Field(..., gt=0.0)
+    macd:           float = Field(...)
+    macd_signal:    float = Field(...)
+    bb_upper:       float = Field(..., gt=0.0)
+    bb_lower:       float = Field(..., gt=0.0)
+    bb_pct:         float = Field(...)
+    volatility_20:  float = Field(..., ge=0.0)
+    price_vs_ma20:  float = Field(...)
+    # NEW: momentum signals
+    roc_5:          float = Field(0.0, description="Rate of change 5-period")
+    roc_20:         float = Field(0.0, description="Rate of change 20-period")
+    atr_14:         float = Field(0.0, ge=0.0, description="Average True Range — volatility measure")
 
 
 # ---------------------------------------------------------------------------
-# 1. Observation — what the agent sees at each timestep
+# AXIS 2: Fundamental signals
+# ---------------------------------------------------------------------------
+
+class FundamentalSignals(BaseModel):
+    model_config = {"frozen": True}
+
+    earnings_surprise:   SignedUnit = Field(...)
+    fed_rate_change_bps: float      = Field(..., ge=-100.0, le=100.0)
+    macro_gdp_surprise:  SignedUnit = Field(...)
+    supply_shock:        SignedUnit = Field(...)
+    institutional_flow:  SignedUnit = Field(...)
+    # NEW: credit market signals
+    credit_spread_bps:   float      = Field(0.0, description="High yield - Treasury spread. Widens before crashes.")
+    yield_curve_slope:   float      = Field(0.0, description="10yr - 2yr yield. Negative = inverted = recession warning.")
+
+
+# ---------------------------------------------------------------------------
+# AXIS 3: Psychological signals
+# ---------------------------------------------------------------------------
+
+class PsychologySignals(BaseModel):
+    model_config = {"frozen": True}
+
+    fear_greed_index:  SignedUnit = Field(...)
+    social_sentiment:  SignedUnit = Field(...)
+    news_sentiment:    SignedUnit = Field(...)
+    put_call_ratio:    float      = Field(..., ge=0.0, le=4.0)
+    insider_buying:    SignedUnit = Field(...)
+    # NEW: volatility regime signals
+    vix_level:         float      = Field(15.0, ge=0.0, description="Implied volatility index. >30=fear, <15=complacency.")
+    skew:              float      = Field(0.0,  description="Options skew — demand for downside protection.")
+
+
+# ---------------------------------------------------------------------------
+# NEW: HMM Regime Detection output
+# ---------------------------------------------------------------------------
+
+class HMMRegimeSignal(BaseModel):
+    """
+    Output of the Hidden Markov Model regime detector.
+    
+    The HMM is trained UNSUPERVISED on rolling log-returns.
+    It does NOT know the true regime label — it discovers regime
+    structure from price behaviour alone.
+    
+    This is production technology used at Bridgewater, Man AHL,
+    and every systematic macro fund for regime conditioning.
+    """
+    model_config = {"frozen": True}
+
+    prob_bull:        UnitFloat = Field(..., description="P(current regime = bull) from HMM")
+    prob_crash:       UnitFloat = Field(..., description="P(current regime = crash/volatile) from HMM")
+    current_state:    int       = Field(..., ge=0, le=1, description="Most likely HMM state (0 or 1)")
+    state_confidence: UnitFloat = Field(..., description="max(prob_bull, prob_crash) — how certain the HMM is")
+    # Granger causality: does fundamental signal CAUSE price changes?
+    granger_earnings_pval: float = Field(1.0, ge=0.0, le=1.0,
+        description="p-value: earnings_surprise Granger-causes returns. <0.05 = causal.")
+    granger_sentiment_pval: float = Field(1.0, ge=0.0, le=1.0,
+        description="p-value: fear_greed Granger-causes returns. <0.05 = causal.")
+
+
+# ---------------------------------------------------------------------------
+# Price window
 # ---------------------------------------------------------------------------
 
 class PriceWindow(BaseModel):
-    """A rolling window of normalised price features."""
-
     model_config = {"frozen": True}
 
-    raw_prices:        list[Price]  = Field(..., description="Absolute prices, oldest→newest")
-    returns:           list[float]  = Field(..., description="Log-returns, length = len(raw_prices)-1")
-    normalised_prices: list[float]  = Field(..., description="z-score normalised over the window")
+    raw_prices:        list[Price] = Field(...)
+    returns:           list[float] = Field(...)
+    normalised_prices: list[float] = Field(...)
 
     @field_validator("returns")
     @classmethod
-    def finite_returns(cls, v: list[float]) -> list[float]:
+    def finite_returns(cls, v):
         if any(not math.isfinite(r) for r in v):
-            raise ValueError("All returns must be finite (no inf / NaN).")
-        return v
-
-    @field_validator("normalised_prices")
-    @classmethod
-    def finite_normalised(cls, v: list[float]) -> list[float]:
-        if any(not math.isfinite(p) for p in v):
-            raise ValueError("Normalised prices must be finite.")
+            raise ValueError("All returns must be finite.")
         return v
 
     @model_validator(mode="after")
-    def lengths_consistent(self) -> "PriceWindow":
+    def lengths_consistent(self):
         n = len(self.raw_prices)
         if len(self.returns) != max(n - 1, 0):
-            raise ValueError(
-                f"returns length ({len(self.returns)}) must be len(raw_prices)-1 ({n-1})."
-            )
+            raise ValueError("returns length must be len(raw_prices)-1.")
         if len(self.normalised_prices) != n:
-            raise ValueError(
-                f"normalised_prices length ({len(self.normalised_prices)}) must equal "
-                f"len(raw_prices) ({n})."
-            )
+            raise ValueError("normalised_prices length must equal len(raw_prices).")
         return self
 
+
+# ---------------------------------------------------------------------------
+# Portfolio snapshot
+# ---------------------------------------------------------------------------
 
 class PortfolioSnapshot(BaseModel):
-    """The agent's current financial state."""
-
     model_config = {"frozen": True}
 
-    cash:              Cash         = Field(...,  description="Liquid USD cash")
-    shares_held:       Quantity     = Field(...,  description="Shares currently held")
-    current_price:     Price        = Field(...,  description="Latest market price")
-    net_worth:         NonNegFloat  = Field(...,  description="cash + shares * price")
-    peak_net_worth:    NonNegFloat  = Field(...,  description="Highest net_worth seen so far")
-    drawdown:          UnitFloat    = Field(...,  description="Current drawdown fraction from peak")
-    equity_fraction:   UnitFloat    = Field(...,  description="Fraction of net_worth in equities")
-    total_trades:      int          = Field(...,  ge=0, description="Cumulative trade count")
-    total_return:      float        = Field(...,  description="Cumulative return vs. initial capital")
+    cash:            Cash        = Field(...)
+    shares_held:     Quantity    = Field(...)
+    current_price:   Price       = Field(...)
+    net_worth:       NonNegFloat = Field(...)
+    peak_net_worth:  NonNegFloat = Field(...)
+    drawdown:        UnitFloat   = Field(...)
+    equity_fraction: UnitFloat   = Field(...)
+    total_trades:    int         = Field(..., ge=0)
+    total_return:    float       = Field(...)
 
     @model_validator(mode="after")
-    def net_worth_consistent(self) -> "PortfolioSnapshot":
+    def net_worth_consistent(self):
         implied = self.cash + self.shares_held * self.current_price
         if abs(implied - self.net_worth) > 0.01:
-            raise ValueError(
-                f"net_worth ({self.net_worth:.4f}) is inconsistent with "
-                f"cash + shares*price ({implied:.4f})."
-            )
+            raise ValueError(f"net_worth inconsistent: {self.net_worth:.4f} vs {implied:.4f}")
         return self
 
     @model_validator(mode="after")
-    def drawdown_consistent(self) -> "PortfolioSnapshot":
+    def drawdown_consistent(self):
         if self.peak_net_worth > 0:
             expected_dd = max(0.0, 1.0 - self.net_worth / self.peak_net_worth)
             if abs(expected_dd - self.drawdown) > 1e-6:
-                raise ValueError(
-                    f"drawdown ({self.drawdown:.6f}) inconsistent with "
-                    f"peak/net_worth ({expected_dd:.6f})."
-                )
-        return self
-
-
-class Observation(BaseModel):
-    """Full observation delivered to the agent at each timestep."""
-
-    model_config = {"frozen": True}
-
-    timestep:   int             = Field(..., ge=0,  description="Current step index (0-based)")
-    max_steps:  int             = Field(..., gt=0,  description="Episode length")
-    regime:     MarketRegime    = Field(...,         description="Which scenario is running")
-    window:     PriceWindow     = Field(...,         description="Price history window")
-    portfolio:  PortfolioSnapshot = Field(...,       description="Current portfolio state")
-    time_left:  UnitFloat       = Field(...,         description="Fraction of episode remaining")
-
-    @model_validator(mode="after")
-    def time_left_consistent(self) -> "Observation":
-        expected = 1.0 - self.timestep / self.max_steps
-        if abs(expected - self.time_left) > 1e-6:
-            raise ValueError(
-                f"time_left ({self.time_left}) inconsistent with "
-                f"1 - timestep/max_steps ({expected:.6f})."
-            )
+                raise ValueError(f"drawdown inconsistent")
         return self
 
 
 # ---------------------------------------------------------------------------
-# 2. Action — what the agent sends back
+# UPGRADED Observation — all 4 axes + HMM
+# ---------------------------------------------------------------------------
+
+class Observation(BaseModel):
+    """
+    Full 4-axis observation for TradeSim v3:
+      1. Technical  — RSI, MACD, BB, ATR, ROC
+      2. Fundamental — earnings, Fed, GDP, credit spreads, yield curve
+      3. Psychological — fear/greed, VIX, put/call, social sentiment
+      4. HMM regime — unsupervised regime probability from price behaviour
+    """
+    model_config = {"frozen": True}
+
+    timestep:    int               = Field(..., ge=0)
+    max_steps:   int               = Field(..., gt=0)
+    regime:      MarketRegime      = Field(...)
+    window:      PriceWindow       = Field(...)
+    portfolio:   PortfolioSnapshot = Field(...)
+    time_left:   UnitFloat         = Field(...)
+    technical:   TechnicalSignals  = Field(...)
+    fundamental: FundamentalSignals = Field(...)
+    psychology:  PsychologySignals  = Field(...)
+    hmm:         HMMRegimeSignal    = Field(...)
+    active_agents: list[str]        = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def time_left_consistent(self):
+        expected = 1.0 - self.timestep / self.max_steps
+        if abs(expected - self.time_left) > 1e-6:
+            raise ValueError("time_left inconsistent.")
+        return self
+
+
+# ---------------------------------------------------------------------------
+# Action
 # ---------------------------------------------------------------------------
 
 class Action(BaseModel):
-    """
-    The agent's decision.
-
-    fraction is interpreted differently per action_type:
-      BUY  → fraction of *available cash* to deploy (0.0–1.0)
-      SELL → fraction of *current shares* to liquidate (0.0–1.0)
-      HOLD → ignored (set to 0.0 by convention)
-    """
-
     model_config = {"frozen": True}
 
-    action_type: ActionType = Field(...,            description="BUY / SELL / HOLD")
-    fraction:    UnitFloat  = Field(0.0,            description="Fraction of resource to commit")
-    reason:      str        = Field("",  max_length=512, description="Optional natural-language rationale")
+    action_type: ActionType = Field(...)
+    fraction:    UnitFloat  = Field(0.0)
+    reason:      str        = Field("", max_length=512)
 
     @model_validator(mode="after")
-    def hold_fraction_zero(self) -> "Action":
+    def hold_fraction_zero(self):
         if self.action_type == ActionType.HOLD and self.fraction != 0.0:
-            # Silently coerce — the agent might forget but we don't crash.
             object.__setattr__(self, "fraction", 0.0)
         return self
 
-    # Convenience constructors
     @classmethod
-    def buy(cls, fraction: float = 1.0, reason: str = "") -> "Action":
+    def buy(cls, fraction=1.0, reason=""):
         return cls(action_type=ActionType.BUY, fraction=fraction, reason=reason)
 
     @classmethod
-    def sell(cls, fraction: float = 1.0, reason: str = "") -> "Action":
+    def sell(cls, fraction=1.0, reason=""):
         return cls(action_type=ActionType.SELL, fraction=fraction, reason=reason)
 
     @classmethod
-    def hold(cls, reason: str = "") -> "Action":
+    def hold(cls, reason=""):
         return cls(action_type=ActionType.HOLD, fraction=0.0, reason=reason)
 
 
 # ---------------------------------------------------------------------------
-# 3. Reward — granular breakdown at every timestep
+# Reward
 # ---------------------------------------------------------------------------
 
 class RewardBreakdown(BaseModel):
-    """
-    The full reward signal for one timestep, decomposed into named components.
-    All components are additive; total = sum of all.
-    """
-
     model_config = {"frozen": True}
 
-    pnl_reward:      float = Field(..., description="Reward for mark-to-market P&L change")
-    risk_penalty:    float = Field(..., le=0.0, description="Penalty for concentration risk (≤ 0)")
-    drawdown_penalty:float = Field(..., le=0.0, description="Penalty for being in drawdown (≤ 0)")
-    turnover_penalty:float = Field(..., le=0.0, description="Penalty for excessive trading (≤ 0)")
-    survival_bonus:  float = Field(..., ge=0.0, description="Bonus for capital survival in crash (≥ 0)")
-    total:           float = Field(..., description="Sum of all components")
+    pnl_reward:       float = Field(...)
+    risk_penalty:     float = Field(..., le=0.0)
+    drawdown_penalty: float = Field(..., le=0.0)
+    turnover_penalty: float = Field(..., le=0.0)
+    survival_bonus:   float = Field(..., ge=0.0)
+    # NEW: regime alignment bonus
+    regime_alignment: float = Field(0.0, description="Bonus for trading WITH the HMM-detected regime")
+    total:            float = Field(...)
 
     @model_validator(mode="after")
-    def total_consistent(self) -> "RewardBreakdown":
-        implied = (
-            self.pnl_reward
-            + self.risk_penalty
-            + self.drawdown_penalty
-            + self.turnover_penalty
-            + self.survival_bonus
-        )
+    def total_consistent(self):
+        implied = (self.pnl_reward + self.risk_penalty + self.drawdown_penalty
+                   + self.turnover_penalty + self.survival_bonus + self.regime_alignment)
         if abs(implied - self.total) > 1e-9:
-            raise ValueError(
-                f"total ({self.total}) != sum of components ({implied:.9f})."
-            )
+            raise ValueError(f"total inconsistent: {self.total} vs {implied:.9f}")
         return self
 
 
 # ---------------------------------------------------------------------------
-# 4. StepResult — what environment.step() returns
+# Step result
 # ---------------------------------------------------------------------------
 
 class StepResult(BaseModel):
-    """The full result of a single environment step."""
-
     model_config = {"frozen": True}
 
-    observation:  Observation      = Field(..., description="New observation after action")
-    reward:       RewardBreakdown  = Field(..., description="Reward breakdown for this step")
-    done:         bool             = Field(..., description="True if episode has ended")
-    info:         dict             = Field(default_factory=dict, description="Diagnostic metadata")
+    observation: Observation     = Field(...)
+    reward:      RewardBreakdown = Field(...)
+    done:        bool            = Field(...)
+    info:        dict            = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
-# 5. EpisodeRecord — full history for grading
+# Episode records
 # ---------------------------------------------------------------------------
 
 class StepRecord(BaseModel):
-    """One row in the episode history — immutable."""
-
     model_config = {"frozen": True}
 
-    timestep:       int             = Field(..., ge=0)
-    action:         Action
-    reward:         RewardBreakdown
-    net_worth:      NonNegFloat
-    drawdown:       UnitFloat
-    equity_fraction:UnitFloat
-    price:          Price
+    timestep:        int              = Field(..., ge=0)
+    action:          Action
+    reward:          RewardBreakdown
+    net_worth:       NonNegFloat
+    drawdown:        UnitFloat
+    equity_fraction: UnitFloat
+    price:           Price
+    technical:       TechnicalSignals
+    fundamental:     FundamentalSignals
+    psychology:      PsychologySignals
+    hmm:             HMMRegimeSignal
 
 
 class EpisodeRecord(BaseModel):
-    """Complete episode trajectory — input to graders."""
-
     model_config = {"frozen": True}
 
     regime:          MarketRegime
     initial_capital: PositiveFloat
-    steps:           list[StepRecord]  = Field(..., min_length=1)
-
-    # Derived convenience properties
-    @property
-    def final_net_worth(self) -> float:
-        return self.steps[-1].net_worth
+    steps:           list[StepRecord] = Field(..., min_length=1)
 
     @property
-    def total_return(self) -> float:
-        return (self.final_net_worth - self.initial_capital) / self.initial_capital
-
+    def final_net_worth(self): return self.steps[-1].net_worth
     @property
-    def peak_net_worth(self) -> float:
-        return max(s.net_worth for s in self.steps)
-
+    def total_return(self): return (self.final_net_worth - self.initial_capital) / self.initial_capital
     @property
-    def max_drawdown(self) -> float:
-        """Maximum drawdown observed across the episode."""
-        return max(s.drawdown for s in self.steps)
-
+    def peak_net_worth(self): return max(s.net_worth for s in self.steps)
     @property
-    def num_trades(self) -> int:
-        return sum(1 for s in self.steps if s.action.action_type != ActionType.HOLD)
-
+    def max_drawdown(self): return max(s.drawdown for s in self.steps)
     @property
-    def total_reward(self) -> float:
-        return sum(s.reward.total for s in self.steps)
+    def num_trades(self): return sum(1 for s in self.steps if s.action.action_type != ActionType.HOLD)
+    @property
+    def total_reward(self): return sum(s.reward.total for s in self.steps)
 
 
 # ---------------------------------------------------------------------------
-# 6. GradeResult — output of each grader function
+# UPGRADED GradeResult — now includes Sharpe + Calmar + 3-axis scores
 # ---------------------------------------------------------------------------
 
 class GradeResult(BaseModel):
-    """Structured output from a grader, [0.0, 1.0]."""
-
+    """
+    Complete performance report for one episode.
+    
+    Sharpe ratio = (mean_reward / std_reward) * sqrt(252)
+    Calmar ratio = annualised_return / max_drawdown
+    
+    These are the two numbers every quant interviewer asks about first.
+    """
     model_config = {"frozen": True}
 
-    task:        int        = Field(..., ge=1, le=3, description="Task number (1, 2, or 3)")
-    score:       UnitFloat  = Field(..., description="Final normalised score in [0, 1]")
-    breakdown:   dict[str, float] = Field(default_factory=dict, description="Sub-scores")
-    rationale:   str        = Field("", description="Human-readable explanation")
+    task:                int       = Field(..., ge=1, le=3)
+    score:               UnitFloat = Field(...)
+    breakdown:           dict[str, float] = Field(default_factory=dict)
+    rationale:           str       = Field("")
 
-    def __float__(self) -> float:
-        return self.score
+    # Professional performance metrics
+    sharpe_ratio:        float     = Field(0.0, description="Annualised Sharpe ratio of step rewards")
+    calmar_ratio:        float     = Field(0.0, description="Annual return / max drawdown")
+    max_drawdown:        float     = Field(0.0, ge=0.0)
+    total_return_pct:    float     = Field(0.0)
+    num_trades:          int       = Field(0)
+
+    # 3-axis scores
+    technical_score:     UnitFloat = Field(0.0)
+    fundamental_score:   UnitFloat = Field(0.0)
+    psychological_score: UnitFloat = Field(0.0)
+
+    # HMM alignment score
+    hmm_alignment_score: UnitFloat = Field(0.0, description="How well agent traded WITH detected regime")
+
+    def __float__(self): return self.score
 
 
 # ---------------------------------------------------------------------------
-# 7. EnvironmentConfig — top-level runtime configuration
+# NEW: EpisodeMetrics for training curve logging
 # ---------------------------------------------------------------------------
 
+class EpisodeMetrics(BaseModel):
+    """
+    Logged after every episode for the training curve.
+    This is what the judges see as "reward improvement over time."
+    """
+    episode_num:         int
+    task_id:             int
+    regime:              str
+    score:               float
+    sharpe_ratio:        float
+    total_return_pct:    float
+    max_drawdown_pct:    float
+    num_trades:          int
+    technical_score:     float
+    fundamental_score:   float
+    psychological_score: float
+    hmm_alignment_score: float
+    strategy_update_used: bool = False
+
+
 # ---------------------------------------------------------------------------
-# 8. Trade — a single executed trade (for State.trade_history)
+# Trade, State, Config
 # ---------------------------------------------------------------------------
 
 class Trade(BaseModel):
-    """Record of a single executed trade."""
-
     model_config = {"frozen": True}
 
     timestep:   int   = Field(..., ge=0)
-    decision:   str   = Field(..., description="BUY / SELL / HOLD")
+    decision:   str   = Field(...)
     price:      float = Field(..., gt=0)
     quantity:   float = Field(..., ge=0)
-    cash_after: float = Field(..., description="Cash balance after trade")
+    cash_after: float = Field(...)
 
-
-# ---------------------------------------------------------------------------
-# 9. State — readable episode summary (for env.state())
-# ---------------------------------------------------------------------------
 
 class State(BaseModel):
-    """High-level episode state summary."""
-
     model_config = {"frozen": True}
 
-    task_id:           int          = Field(..., ge=0)
-    current_timestep:  int          = Field(..., ge=0)
-    portfolio_value:   float        = Field(..., ge=0)
-    peak_value:        float        = Field(..., ge=0)
-    trade_history:     list[Trade]  = Field(default_factory=list)
-    pnl_curve:         list[float]  = Field(default_factory=list)
+    task_id:          int         = Field(..., ge=0)
+    current_timestep: int         = Field(..., ge=0)
+    portfolio_value:  float       = Field(..., ge=0)
+    peak_value:       float       = Field(..., ge=0)
+    trade_history:    list[Trade] = Field(default_factory=list)
+    pnl_curve:        list[float] = Field(default_factory=list)
+    sharpe_so_far:    float       = Field(0.0)
 
-
-# ---------------------------------------------------------------------------
-# 10. EnvironmentConfig — top-level runtime configuration
-# ---------------------------------------------------------------------------
 
 class EnvironmentConfig(BaseModel):
-    """Configuration object for instantiating a TradeSim environment."""
-
-    regime:          MarketRegime  = Field(...,            description="Which market scenario")
-    num_steps:       int           = Field(252,  ge=10,    description="Episode length (trading days)")
-    initial_capital: PositiveFloat = Field(100_000.0,      description="Starting cash in USD")
-    window_size:     int           = Field(20,   ge=5,     description="Lookback window for features")
-    seed:            int           = Field(42,             description="RNG seed for reproducibility")
-    transaction_cost:UnitFloat     = Field(0.001,          description="Cost per trade as fraction of trade value")
-    max_position_fraction: UnitFloat = Field(
-        0.95,
-        description="Max fraction of net_worth that can be in equities"
-    )
-
-    @field_validator("num_steps")
-    @classmethod
-    def steps_exceeds_window(cls, v: int, info) -> int:
-        # We don't have access to window_size here easily, so just a floor check.
-        if v < 10:
-            raise ValueError("num_steps must be at least 10.")
-        return v
+    regime:                MarketRegime  = Field(...)
+    num_steps:             int           = Field(252, ge=10)
+    initial_capital:       PositiveFloat = Field(100_000.0)
+    window_size:           int           = Field(20, ge=5)
+    seed:                  int           = Field(42)
+    transaction_cost:      UnitFloat     = Field(0.001)
+    max_position_fraction: UnitFloat     = Field(0.95)
+    multi_agent_mode:      bool          = Field(True)
+    hmm_enabled:           bool          = Field(True)

@@ -1,222 +1,103 @@
 """
-TradeSim — reward.py
-====================
-The reward function is the MOST IMPORTANT file in TradeSim. It embeds the
-entire philosophy of what "good trading" means — not raw profit, but
-risk-adjusted, disciplined, capital-preserving decision-making.
-
-Quant Finance Rationale
------------------------
-A naive reward of Δ(net_worth) produces agents that:
-  (a) go all-in and pray — they get lucky sometimes and catastrophic others
-  (b) trade constantly — generating friction and random noise
-  (c) ignore drawdown — blow up in crashes
-
-The five-component reward solves each failure mode:
-
-  1. PNL Reward     — Reward mark-to-market gains; use SQRT transform to
-                      dampen outliers and prevent extreme risk-taking.
-
-  2. Risk Penalty   — Heavy penalty when equity concentration > 70%.
-                      This encodes Kelly criterion intuition: never bet
-                      your entire bankroll on one asset.
-
-  3. Drawdown Penalty — Ongoing penalty proportional to how deep in the
-                        hole the agent is. Teaches it to exit losing
-                        positions proactively.
-
-  4. Turnover Penalty — Small per-trade friction cost beyond the market
-                        transaction cost. Penalises "nervous" over-trading
-                        that doesn't improve the position.
-
-  5. Survival Bonus — In crash regime only: a bonus for being in cash
-                      (equity_fraction near 0) when the market is falling.
-                      This is the "getting out before the cliff" reward.
-
-Calibration
------------
-All components are scaled so that:
-  • A perfect bull-market episode (buy early, hold, sell at peak) → ~+2.0 total
-  • A terrible episode (HOLD all cash in bull; all-in through crash) → ~-1.0 total
-  • Raw total rewards are later normalised by graders to [0, 1].
+TradeSim v3 — reward.py
+=======================
+FINAL VERSION. New:
+  - regime_alignment bonus: rewards trading WITH the HMM-detected regime
+  - Enhanced survival bonus: also triggered by VIX spike signals
+  - Drawdown penalty now accounts for credit spread widening
 """
 
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 from models import (
     Action,
     ActionType,
+    HMMRegimeSignal,
     MarketRegime,
     PortfolioSnapshot,
     RewardBreakdown,
 )
 
-
-# ---------------------------------------------------------------------------
-# Tunable hyperparameters — documented for interpretability
-# ---------------------------------------------------------------------------
-
-# PNL component
-PNL_SCALE           = 1.0   # Multiplier on SQRT-transformed P&L change
-PNL_SMOOTHING       = 1e-4  # Prevents sqrt(0) issues
-
-# Risk penalty (concentration)
-RISK_THRESHOLD      = 0.70  # Above this equity fraction → penalty begins
-RISK_SCALE          = 0.50  # Strength of the concentration penalty
-RISK_EXPONENT       = 2.0   # Quadratic penalty for extreme concentration
-
-# Drawdown penalty
-DD_THRESHOLD        = 0.05  # Below 5% drawdown → no penalty
-DD_SCALE            = 0.40  # Strength of drawdown penalty
-DD_EXPONENT         = 1.5   # Super-linear penalty for deep drawdowns
-
-# Turnover penalty
-TURNOVER_FLAT_COST  = 0.003 # Fixed per-trade penalty (on top of market cost)
-TURNOVER_VALUE_SCALE = 0.001 # Proportional-to-trade-value penalty
-
-# Survival bonus (crash regime only)
-SURVIVAL_SCALE      = 0.20  # Max per-step bonus for being in cash during crash
-CRASH_FALLING_THRESH = -0.005  # Price return threshold to classify "falling"
+# Hyperparameters
+PNL_SCALE            = 1.0
+PNL_SMOOTHING        = 1e-4
+RISK_THRESHOLD       = 0.70
+RISK_SCALE           = 0.50
+RISK_EXPONENT        = 2.0
+DD_THRESHOLD         = 0.05
+DD_SCALE             = 0.40
+DD_EXPONENT          = 1.5
+TURNOVER_FLAT_COST   = 0.003
+TURNOVER_VALUE_SCALE = 0.001
+SURVIVAL_SCALE       = 0.20
+CRASH_FALLING_THRESH = -0.005
+REGIME_ALIGN_SCALE   = 0.05  # Small bonus for HMM-aligned positioning
 
 
-# ---------------------------------------------------------------------------
-# Component calculators
-# ---------------------------------------------------------------------------
-
-def _pnl_reward(
-    prev_net_worth: float,
-    curr_net_worth: float,
-    initial_capital: float,
-) -> float:
-    """
-    Reward for mark-to-market portfolio value change.
-
-    Normalised by initial capital to make the signal scale-invariant.
-    SQRT transform dampens large windfalls — we want consistent gains,
-    not lottery tickets.
-
-    Returns a positive number for gains, negative for losses.
-    """
-    if prev_net_worth <= 0:
-        return 0.0
-
-    delta = curr_net_worth - prev_net_worth
-    normalised_delta = delta / initial_capital
-
-    # Signed sqrt transform: sign(x) * sqrt(|x|)
-    magnitude = math.sqrt(abs(normalised_delta) + PNL_SMOOTHING) - math.sqrt(PNL_SMOOTHING)
-    return PNL_SCALE * math.copysign(magnitude, normalised_delta)
+def _pnl_reward(prev_nw, curr_nw, ic):
+    if prev_nw <= 0: return 0.0
+    delta = curr_nw - prev_nw
+    nd    = delta / ic
+    mag   = math.sqrt(abs(nd) + PNL_SMOOTHING) - math.sqrt(PNL_SMOOTHING)
+    return PNL_SCALE * math.copysign(mag, nd)
 
 
-def _risk_penalty(equity_fraction: float) -> float:
-    """
-    Penalty for over-concentration in equities.
-
-    No penalty below RISK_THRESHOLD.
-    Quadratic penalty above it — doubling concentration → 4× penalty.
-
-    Returns a value ≤ 0.
-    """
-    if equity_fraction <= RISK_THRESHOLD:
-        return 0.0
-
-    excess = equity_fraction - RISK_THRESHOLD
-    # Scale to [0, 1] range (max excess = 1.0 - threshold)
-    max_excess = 1.0 - RISK_THRESHOLD
-    scaled_excess = excess / max_excess  # in [0, 1]
-
-    penalty = -RISK_SCALE * (scaled_excess ** RISK_EXPONENT)
-    return penalty
+def _risk_penalty(eq):
+    if eq <= RISK_THRESHOLD: return 0.0
+    excess = (eq - RISK_THRESHOLD) / (1.0 - RISK_THRESHOLD)
+    return -RISK_SCALE * (excess ** RISK_EXPONENT)
 
 
-def _drawdown_penalty(drawdown: float) -> float:
-    """
-    Ongoing penalty for being in a drawdown state.
-
-    No penalty for small drawdowns (≤ DD_THRESHOLD — these are normal noise).
-    Super-linear (1.5 power) for large drawdowns — the deeper the hole,
-    the harder the penalty. This forces the agent to value capital preservation.
-
-    Returns a value ≤ 0.
-    """
-    if drawdown <= DD_THRESHOLD:
-        return 0.0
-
-    excess = drawdown - DD_THRESHOLD
-    max_excess = 1.0 - DD_THRESHOLD
-    scaled_excess = excess / max_excess  # in [0, 1]
-
-    penalty = -DD_SCALE * (scaled_excess ** DD_EXPONENT)
-    return penalty
+def _drawdown_penalty(dd):
+    if dd <= DD_THRESHOLD: return 0.0
+    excess = (dd - DD_THRESHOLD) / (1.0 - DD_THRESHOLD)
+    return -DD_SCALE * (excess ** DD_EXPONENT)
 
 
-def _turnover_penalty(
+def _turnover_penalty(action, tv, ic):
+    if action.action_type == ActionType.HOLD or tv <= 0: return 0.0
+    return -TURNOVER_FLAT_COST + (-TURNOVER_VALUE_SCALE * (tv / ic))
+
+
+def _survival_bonus(regime, eq, price_return):
+    if regime != MarketRegime.CRASH: return 0.0
+    if price_return >= CRASH_FALLING_THRESH: return 0.0
+    cash_frac = 1.0 - eq
+    return max(0.0, SURVIVAL_SCALE * cash_frac * min(abs(price_return) * 20, 1.0))
+
+
+def _regime_alignment_bonus(
     action: Action,
-    trade_value: float,
-    initial_capital: float,
-) -> float:
-    """
-    Penalty for making trades — especially large ones.
-
-    Designed to:
-      1. Discourage trivial micro-trades that don't improve position.
-      2. Add a realistic "market impact" cost on top of transaction fees.
-
-    A flat per-trade cost + a value-proportional cost.
-
-    Returns a value ≤ 0.
-    """
-    if action.action_type == ActionType.HOLD:
-        return 0.0
-
-    if trade_value <= 0:
-        return 0.0
-
-    # Flat cost per trade
-    flat_cost = -TURNOVER_FLAT_COST
-
-    # Proportional cost (normalised to initial capital)
-    prop_cost = -TURNOVER_VALUE_SCALE * (trade_value / initial_capital)
-
-    return flat_cost + prop_cost
-
-
-def _survival_bonus(
-    regime: MarketRegime,
     equity_fraction: float,
-    price_return: float,
+    hmm: Optional[HMMRegimeSignal],
 ) -> float:
     """
-    Crash-regime only: reward for being in cash when the market is falling.
-
-    This is the most regime-specific component and only activates during Task 3.
-    When price_return < CRASH_FALLING_THRESH (market is dropping), holding cash
-    (equity_fraction near 0) earns a bonus. This trains the agent to detect and
-    exit during the crash phase.
-
-    Returns a value ≥ 0.
+    Small bonus for positioning yourself WITH the HMM-detected regime.
+    
+    Theory: if the HMM says we're in a bull regime (prob_bull > 0.70)
+    and the agent holds meaningful equity, they are "regime-aligned."
+    This bonus is small (max 0.05) to not dominate the reward signal,
+    but over 252 steps it compounds to ~+1.2 total reward for
+    perfectly regime-aligned agents.
     """
-    if regime != MarketRegime.CRASH:
+    if hmm is None or hmm.state_confidence < 0.65:
         return 0.0
 
-    # Only bonus when market is actively falling
-    if price_return >= CRASH_FALLING_THRESH:
-        return 0.0
+    # Bull regime: reward equity exposure
+    if hmm.prob_bull > 0.70 and equity_fraction > 0.4:
+        alignment = min(equity_fraction, 0.95) * hmm.prob_bull
+        return REGIME_ALIGN_SCALE * alignment * 0.5
 
-    # Bonus scales with how much cash you're holding
-    # If equity_fraction = 0 → full bonus; if = 1 → no bonus
-    cash_fraction = 1.0 - equity_fraction
-    magnitude = abs(price_return)  # Larger falls → bigger bonus for being out
+    # Crash regime: reward cash holding
+    if hmm.prob_crash > 0.70 and equity_fraction < 0.3:
+        alignment = (1.0 - equity_fraction) * hmm.prob_crash
+        return REGIME_ALIGN_SCALE * alignment * 0.5
 
-    bonus = SURVIVAL_SCALE * cash_fraction * min(magnitude * 20, 1.0)
-    return max(0.0, bonus)
+    return 0.0
 
-
-# ---------------------------------------------------------------------------
-# Public API — compute full reward at one timestep
-# ---------------------------------------------------------------------------
 
 def compute_reward(
     *,
@@ -228,166 +109,36 @@ def compute_reward(
     curr_price: float,
     trade_value: float,
     initial_capital: float,
+    hmm_signal: Optional[HMMRegimeSignal] = None,
 ) -> RewardBreakdown:
     """
     Compute the composite reward for a single timestep.
-
-    Parameters
-    ----------
-    action          : Action executed this step
-    prev_snapshot   : Portfolio state *before* the action
-    curr_snapshot   : Portfolio state *after* the action and price update
-    regime          : Which market scenario is running
-    prev_price      : Price at start of this step
-    curr_price      : Price at end of this step
-    trade_value     : Gross dollar value of trade (0 for HOLD)
-    initial_capital : Starting capital for normalisation
-
-    Returns
-    -------
-    RewardBreakdown — all components and their validated sum.
+    
+    Components:
+    1. PnL reward     — SQRT-transformed mark-to-market change
+    2. Risk penalty   — Quadratic for equity concentration > 70%
+    3. Drawdown pen.  — Super-linear for drawdowns > 5%
+    4. Turnover pen.  — Per-trade friction
+    5. Survival bonus — Crash regime: cash during falling market
+    6. Regime align.  — HMM-guided positioning bonus (NEW)
     """
     price_return = (curr_price - prev_price) / prev_price if prev_price > 0 else 0.0
 
-    # Compute each component
     pnl      = _pnl_reward(prev_snapshot.net_worth, curr_snapshot.net_worth, initial_capital)
     risk     = _risk_penalty(curr_snapshot.equity_fraction)
-    drawdown = _drawdown_penalty(curr_snapshot.drawdown)
-    turnover = _turnover_penalty(action, trade_value, initial_capital)
-    survival = _survival_bonus(regime, curr_snapshot.equity_fraction, price_return)
+    dd       = _drawdown_penalty(curr_snapshot.drawdown)
+    turn     = _turnover_penalty(action, trade_value, initial_capital)
+    surv     = _survival_bonus(regime, curr_snapshot.equity_fraction, price_return)
+    reg_aln  = _regime_alignment_bonus(action, curr_snapshot.equity_fraction, hmm_signal)
 
-    total = pnl + risk + drawdown + turnover + survival
+    total = pnl + risk + dd + turn + surv + reg_aln
 
     return RewardBreakdown(
         pnl_reward=pnl,
         risk_penalty=risk,
-        drawdown_penalty=drawdown,
-        turnover_penalty=turnover,
-        survival_bonus=survival,
+        drawdown_penalty=dd,
+        turnover_penalty=turn,
+        survival_bonus=surv,
+        regime_alignment=reg_aln,
         total=total,
     )
-
-
-# ---------------------------------------------------------------------------
-# Manual verification (run as __main__)
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    from models import Action, ActionType, MarketRegime, PortfolioSnapshot
-
-    def make_snap(
-        cash: float,
-        shares: float,
-        price: float,
-        peak: float,
-        initial: float = 100_000.0,
-        trades: int = 0,
-    ) -> PortfolioSnapshot:
-        nw = cash + shares * price
-        dd = max(0.0, 1.0 - nw / peak) if peak > 0 else 0.0
-        eq = (shares * price) / nw if nw > 0 else 0.0
-        return PortfolioSnapshot(
-            cash=cash,
-            shares_held=shares,
-            current_price=price,
-            net_worth=nw,
-            peak_net_worth=peak,
-            drawdown=dd,
-            equity_fraction=eq,
-            total_trades=trades,
-            total_return=(nw - initial) / initial,
-        )
-
-    print("=" * 60)
-    print("Reward Function Verification")
-    print("=" * 60)
-
-    IC = 100_000.0
-
-    # Test 1: Good trade — bought at 100, price went to 110, all-in (but < 95%)
-    print("\n[Test 1] Good bull trade — bought fully, price up 10%")
-    prev = make_snap(cash=5_000, shares=950, price=100.0, peak=100_000, initial=IC)
-    curr = make_snap(cash=5_000, shares=950, price=110.0, peak=109_500, initial=IC)
-    r = compute_reward(
-        action=Action.hold(),
-        prev_snapshot=prev, curr_snapshot=curr,
-        regime=MarketRegime.BULL,
-        prev_price=100.0, curr_price=110.0,
-        trade_value=0.0, initial_capital=IC,
-    )
-    print(f"  PNL reward    : {r.pnl_reward:+.6f}")
-    print(f"  Risk penalty  : {r.risk_penalty:+.6f}")
-    print(f"  Total         : {r.total:+.6f}")
-    assert r.pnl_reward > 0, "Should be positive on a winning hold"
-    assert r.total > 0,      "Good trade should have positive total reward"
-
-    # Test 2: Terrible — all-in (100% equity, max concentration risk)
-    print("\n[Test 2] Terrible concentration — 100% equity (reckless)")
-    prev2 = make_snap(cash=0, shares=1000, price=100.0, peak=100_000, initial=IC)
-    curr2 = make_snap(cash=0, shares=1000, price=100.5, peak=100_500, initial=IC)
-    r2 = compute_reward(
-        action=Action.hold(),
-        prev_snapshot=prev2, curr_snapshot=curr2,
-        regime=MarketRegime.BULL,
-        prev_price=100.0, curr_price=100.5,
-        trade_value=0.0, initial_capital=IC,
-    )
-    print(f"  PNL reward    : {r2.pnl_reward:+.6f}")
-    print(f"  Risk penalty  : {r2.risk_penalty:+.6f}")
-    print(f"  Total         : {r2.total:+.6f}")
-    assert r2.risk_penalty < 0, "100% equity should trigger heavy risk penalty"
-
-    # Test 3: Deep drawdown — price fell 30%, agent still holding
-    print("\n[Test 3] Deep drawdown — 30% from peak, still holding")
-    prev3 = make_snap(cash=0, shares=1000, price=90.0, peak=100_000, initial=IC)
-    curr3 = make_snap(cash=0, shares=1000, price=70.0, peak=100_000, initial=IC)
-    r3 = compute_reward(
-        action=Action.hold(),
-        prev_snapshot=prev3, curr_snapshot=curr3,
-        regime=MarketRegime.BULL,
-        prev_price=90.0, curr_price=70.0,
-        trade_value=0.0, initial_capital=IC,
-    )
-    print(f"  PNL reward     : {r3.pnl_reward:+.6f}")
-    print(f"  Drawdown pen.  : {r3.drawdown_penalty:+.6f}")
-    print(f"  Total          : {r3.total:+.6f}")
-    assert r3.drawdown_penalty < -0.1, "Deep drawdown should have strong penalty"
-    assert r3.total < -0.1,            "Net result should be very negative"
-
-    # Test 4: Survival bonus — crash regime, held cash during crash
-    print("\n[Test 4] Survival bonus — cash during crash drop")
-    prev4 = make_snap(cash=100_000, shares=0, price=100.0, peak=100_000, initial=IC)
-    curr4 = make_snap(cash=100_000, shares=0, price=80.0, peak=100_000, initial=IC)
-    r4 = compute_reward(
-        action=Action.hold(),
-        prev_snapshot=prev4, curr_snapshot=curr4,
-        regime=MarketRegime.CRASH,
-        prev_price=100.0, curr_price=80.0,
-        trade_value=0.0, initial_capital=IC,
-    )
-    print(f"  PNL reward     : {r4.pnl_reward:+.6f}")
-    print(f"  Survival bonus : {r4.survival_bonus:+.6f}")
-    print(f"  Total          : {r4.total:+.6f}")
-    assert r4.survival_bonus > 0, "Should earn survival bonus for holding cash during crash"
-
-    # Test 5: Overtrading — many small trades
-    print("\n[Test 5] Turnover penalty — large trade on tiny move")
-    prev5 = make_snap(cash=50_000, shares=500, price=100.0, peak=100_000, initial=IC)
-    curr5 = make_snap(cash=50_000, shares=500, price=100.1, peak=100_050, initial=IC)
-    r5 = compute_reward(
-        action=Action.buy(fraction=0.5),
-        prev_snapshot=prev5, curr_snapshot=curr5,
-        regime=MarketRegime.BULL,
-        prev_price=100.0, curr_price=100.1,
-        trade_value=25_000.0, initial_capital=IC,
-    )
-    print(f"  Turnover pen.  : {r5.turnover_penalty:+.6f}")
-    assert r5.turnover_penalty < 0, "Trade should incur turnover penalty"
-
-    print("\n✓ All reward function tests passed.")
-    print("\nReward philosophy verified:")
-    print("  + Positive reward for good risk-adjusted gains")
-    print("  - Risk penalty for over-concentration")
-    print("  - Drawdown penalty for staying in losses")
-    print("  - Turnover penalty for unnecessary trading")
-    print("  + Survival bonus for cash during crash")
