@@ -17,6 +17,7 @@ TradeSim is a high-fidelity simulated trading environment designed for testing R
 - **Quant-Grade Metrics:** Built-in Sharpe Ratio and Max Drawdown tracking.
 - **FastAPI Integration:** Ready for cloud deployment (Port 7860).
 
+Fine Tuned Weights: The Llama-3.1-8B LoRA adapter trained via Unsloth on synthetic Oracle data is available https://drive.google.com/file/d/1ZNo3ZOn1ytIc50fzdud3-2SY1eaK9AZr/view?usp=sharing.
 ## 📊 Baseline Scores (LLaMA-3.1-8B, zero-shot)
 | Task | Score | Note |
 |------|-------|------|
