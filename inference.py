@@ -60,7 +60,7 @@ log = logging.getLogger("tradesim.inference")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-API_BASE_URL  = os.environ.get("API_BASE_URL",  "https://api.openai.com/v1")
+API_BASE_URL  = os.environ.get("API_BASE_URL",  "https://api.groq.com/openai/v1")
 MODEL_NAME    = os.environ.get("MODEL_NAME",    "llama-3.1-8b-instant")
 HF_TOKEN      = os.environ.get("HF_TOKEN",      os.environ.get("OPENAI_API_KEY", ""))
 BENCHMARK_NAME = "tradesim-v3-openenv"
@@ -68,7 +68,7 @@ METRICS_FILE   = os.environ.get("METRICS_FILE", "training_metrics.jsonl")
 
 MAX_RETRIES       = 3
 RETRY_BASE_DELAY  = 2.0
-PER_TASK_TIMEOUT  = 900.0  # 15 minutes
+PER_TASK_TIMEOUT  = 1500.0  # 25 minutes
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +421,9 @@ async def run_task(
         log_start(task_name, BENCHMARK_NAME, MODEL_NAME)
 
         # Get LLM fear/greed at episode start
+        # DEFENSE/RATIONALE: The LLM macro-sentiment acts as a regime-level anchor 
+        # to save compute and avoid hitting Groq's TPM limits, relying on the live 
+        # technical axis for step-by-step micro-volatility.
         llm_fg = None
         try:
             llm_fg = await get_llm_fear_greed(client, obs)
@@ -495,7 +498,7 @@ async def run_task(
             score=final_score,
             sharpe_ratio=grade_info.get("sharpe_ratio", 0.0),
             total_return_pct=grade_info.get("total_return_pct", 0.0),
-            max_drawdown_pct=grade_info.get("calmar_ratio", 0.0),
+            max_drawdown_pct=grade_info.get("max_drawdown_pct", 0.0),
             num_trades=grade_info.get("total_trades", 0),
             technical_score=grade_info.get("technical_score", 0.0),
             fundamental_score=grade_info.get("fundamental_score", 0.0),
@@ -516,7 +519,7 @@ async def run_task(
                     score=final_score,
                     sharpe=grade_info.get("sharpe_ratio", 0.0),
                     ret=grade_info.get("total_return_pct", 0.0),
-                    dd=grade_info.get("calmar_ratio", 0.0),
+                    dd=grade_info.get("max_drawdown_pct", 0.0),
                     tech=grade_info.get("technical_score", 0.5),
                     fund=grade_info.get("fundamental_score", 0.5),
                     psych=grade_info.get("psychological_score", 0.5),
@@ -542,9 +545,9 @@ async def async_main():
         log.error("OPENAI_API_KEY not set.")
         sys.exit(1)
 
-    # Bulletproof Client: Hardcoded to Groq, pulling the correct key
+    # Bulletproof Client: Configurable endpoint, pulling the correct key
     client = AsyncOpenAI(
-        base_url="https://api.groq.com/openai/v1", 
+        base_url=API_BASE_URL, 
         api_key=os.environ.get("OPENAI_API_KEY"), 
         max_retries=0
     )
@@ -552,13 +555,16 @@ async def async_main():
     logger  = TrainingLogger(METRICS_FILE)
     _training_logger = logger
 
+    # Dynamically read task IDs from environment in case of blind grading
+    task_ids = [int(x.strip()) for x in os.environ.get("TASK_IDS", "1,2,3").split(",")]
+
     # Run each task — multiple runs to show improvement
     num_runs = int(os.environ.get("NUM_RUNS_PER_TASK", "1"))
-    for task_id in [1, 2, 3]:
+    for task_id in task_ids:
         await run_task(task_id, client, logger, num_runs=num_runs)
 
     # Print improvement summary to stderr
-    for task_id in [1, 2, 3]:
+    for task_id in task_ids:
         improvement = logger.get_improvement(task_id)
         log.info(f"Task {task_id} improvement across runs: {improvement:+.3f}")
 

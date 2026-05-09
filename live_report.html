@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>TradeSim v3 — Zero-Shot Transfer</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+    body { background:#0b0b0b; color:#e8e8e8; font-family:sans-serif; padding:40px; }
+    .header { text-align:center; padding-bottom:30px; border-bottom:1px solid #272727; }
+    .title { color:#00E676; font-size:42px; font-weight:900; margin-bottom:10px; }
+    .section { background:#141414; padding:20px; border-radius:10px; margin-top:20px; border:1px solid #272727; }
+    table { width:100%; border-collapse:collapse; font-size:14px; margin-top:10px; }
+    th, td { padding:10px; text-align:left; border-bottom:1px solid #272727; }
+    .badge { background:#0a2218; color:#00E676; border:1px solid #1a5c3a; padding:5px 15px; border-radius:20px; font-weight:bold; font-size:12px; }
+</style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">TradeSim v3</div>
+        <div style="color:#888; letter-spacing:2px; margin-bottom:15px;">ZERO-SHOT TRANSFER REPORT : SPY</div>
+        <span class="badge">OpenEnv Compliant</span> <span class="badge" style="background:#0f0f2b;color:#42A5F5;border-color:#1a2a5c">Live Real-World Data</span>
+    </div>
+    
+    <div class="section">
+        <div style="color:#FFD700; font-weight:bold; margin-bottom:10px;">Why this matters:</div>
+        <p style="color:#aaa; line-height:1.6; font-size:14px;">The agent was trained exclusively in a synthetic OpenEnv sandbox to prevent historical curve-fitting. Because it relies on a causal 4-Axis World Model, we successfully executed a Zero-Shot Transfer—piping live Yahoo Finance data into the logic engine without retraining. The agent successfully navigated real-world volatility.</p>
+    </div>
+
+    <div class="section"><div id="chart1"></div></div>
+    <div class="section"><div id="chart2"></div></div>
+
+    <div class="section">
+        <h3 style="color:#888; text-transform:uppercase;">Latest Agent Decisions</h3>
+        <table><tr><th>Date</th><th>Decision</th><th>Asset Price</th><th>Net Worth</th><th>Drawdown</th><th>Agent Reasoning</th></tr><tr><td style='color:#888'>2026-03-27</td><td style='color:#00E676'><b>BUY</b></td><td>$634.09</td><td>$99,970</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Oversold (23.6) · BB Lower Break · VIX Panic (Contrarian Buy) · Regime: Crash Detected</td></tr><tr><td style='color:#888'>2026-03-30</td><td style='color:#00E676'><b>BUY</b></td><td>$631.97</td><td>$99,849</td><td>0.2%</td><td style='color:#aaa;font-size:11px'>RSI Oversold (23.3) · BB Lower Break · VIX Panic (Contrarian Buy) · Regime: Crash Detected</td></tr><tr><td style='color:#888'>2026-03-31</td><td style='color:#FF5252'><b>SELL</b></td><td>$650.34</td><td>$101,311</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>Regime: Crash Detected</td></tr><tr><td style='color:#888'>2026-04-01</td><td style='color:#FF5252'><b>SELL</b></td><td>$655.24</td><td>$101,576</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>Regime: Crash Detected</td></tr><tr><td style='color:#888'>2026-04-02</td><td style='color:#FF5252'><b>SELL</b></td><td>$655.83</td><td>$101,592</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>Regime: Crash Detected</td></tr><tr><td style='color:#888'>2026-04-06</td><td style='color:#FF5252'><b>SELL</b></td><td>$658.93</td><td>$101,672</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>Regime: Crash Detected</td></tr><tr><td style='color:#888'>2026-04-07</td><td style='color:#FF5252'><b>SELL</b></td><td>$659.22</td><td>$101,673</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>Regime: Crash Detected</td></tr><tr><td style='color:#888'>2026-04-08</td><td style='color:#FF5252'><b>SELL</b></td><td>$676.01</td><td>$101,898</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>Regime: Crash Detected</td></tr><tr><td style='color:#888'>2026-04-09</td><td style='color:#888'><b>HOLD</b></td><td>$679.91</td><td>$101,935</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>BB Upper Break</td></tr><tr><td style='color:#888'>2026-04-10</td><td style='color:#888'><b>HOLD</b></td><td>$679.46</td><td>$101,930</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>No clear signal, holding.</td></tr><tr><td style='color:#888'>2026-04-13</td><td style='color:#888'><b>HOLD</b></td><td>$686.10</td><td>$101,993</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>BB Upper Break</td></tr><tr><td style='color:#888'>2026-04-14</td><td style='color:#FF5252'><b>SELL</b></td><td>$694.46</td><td>$102,070</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Overbought (72.5) · BB Upper Break</td></tr><tr><td style='color:#888'>2026-04-15</td><td style='color:#FF5252'><b>SELL</b></td><td>$699.94</td><td>$102,105</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Overbought (73.0) · BB Upper Break</td></tr><tr><td style='color:#888'>2026-04-16</td><td style='color:#FF5252'><b>SELL</b></td><td>$701.66</td><td>$102,112</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Overbought (83.8) · BB Upper Break</td></tr><tr><td style='color:#888'>2026-04-17</td><td style='color:#FF5252'><b>SELL</b></td><td>$710.14</td><td>$102,139</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Overbought (96.8) · BB Upper Break</td></tr><tr><td style='color:#888'>2026-04-20</td><td style='color:#FF5252'><b>SELL</b></td><td>$708.72</td><td>$102,136</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Overbought (97.7)</td></tr><tr><td style='color:#888'>2026-04-21</td><td style='color:#FF5252'><b>SELL</b></td><td>$704.08</td><td>$102,128</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Overbought (90.2)</td></tr><tr><td style='color:#888'>2026-04-22</td><td style='color:#FF5252'><b>SELL</b></td><td>$711.21</td><td>$102,135</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Overbought (90.6)</td></tr><tr><td style='color:#888'>2026-04-23</td><td style='color:#FF5252'><b>SELL</b></td><td>$708.45</td><td>$102,133</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Overbought (87.0)</td></tr><tr><td style='color:#888'>2026-04-24</td><td style='color:#FF5252'><b>SELL</b></td><td>$713.94</td><td>$102,136</td><td>0.0%</td><td style='color:#aaa;font-size:11px'>RSI Overbought (87.4)</td></tr></table>
+    </div>
+
+<script>
+    Plotly.newPlot('chart1', [
+        {x: ["2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24"], y: [100000.0, 100000.0, 100000.0, 100000.0, 100000.0, 100000.0, 100000.0, 100000.0, 100000.0, 100000.0, 99970.0, 99848.79643237597, 101311.16740931082, 101576.07438496265, 101591.5796717285, 101671.67739039648, 101673.45880089418, 101897.76871073488, 101934.68627201718, 101930.42697562184, 101993.28164132351, 102070.44677454156, 102105.36731885157, 102112.36886283888, 102139.21084027053, 102135.50010158951, 102127.78201135891, 102135.4849423181, 102133.16761618231, 102136.04664357442], name: 'Portfolio NW ($)', line: {color: '#00E676', width: 3}},
+        {x: ["2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24"], y: [660.4862060546875, 667.2078857421875, 668.9630126953125, 659.6285400390625, 658.0029907226562, 648.5700073242188, 655.3800048828125, 653.1799926757812, 656.8200073242188, 645.0900268554688, 634.0900268554688, 631.969970703125, 650.3400268554688, 655.239990234375, 655.8300170898438, 658.9299926757812, 659.219970703125, 676.010009765625, 679.9099731445312, 679.4600219726562, 686.0999755859375, 694.4600219726562, 699.9400024414062, 701.6599731445312, 710.1400146484375, 708.719970703125, 704.0800170898438, 711.2100219726562, 708.4500122070312, 713.9400024414062], name: 'Asset Price ($)', yaxis: 'y2', line: {color: '#42A5F5', dash: 'dot'}}
+    ], {
+        title: 'Portfolio Performance vs Real Market Price', paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+        font: {color: '#888'}, yaxis: {title: 'Portfolio ($)', gridcolor: '#272727'}, 
+        yaxis2: {title: 'Asset Price', overlaying: 'y', side: 'right', showgrid: false}
+    });
+
+    Plotly.newPlot('chart2', [
+        {x: ["2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24"], y: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85], name: 'P(Bull State)', line: {color: '#00E676'}, fill: 'tozeroy', fillcolor: 'rgba(0,230,118,0.1)'},
+        {x: ["2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24"], y: [0.0, 29.819323996050983, 31.826999602069236, 29.210812725752078, 29.96175234927111, 25.786480585219024, 34.600387245793655, 29.225385949857284, 34.333038167629326, 33.04119649793583, 23.60354490463726, 23.303351551855897, 37.77216241475995, 45.17882266988791, 47.41981983688318, 45.22106936699298, 44.27842899990251, 58.84541662711847, 61.54541945445188, 67.98230840620741, 67.91879444844764, 72.46409833647986, 73.00469942195026, 83.78925617424375, 96.83457661419152, 97.67673581305905, 90.24871228037455, 90.56391446399329, 86.9730607847779, 87.3963729065045], name: 'RSI 14', yaxis: 'y2', line: {color: '#FFD700'}}
+    ], {
+        title: 'HMM Regime Probability & Technical Sentiment', paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+        font: {color: '#888'}, yaxis: {title: 'Probability (0 to 1)', range: [0, 1], gridcolor: '#272727'},
+        yaxis2: {title: 'RSI', range: [0, 100], overlaying: 'y', side: 'right', showgrid: false}
+    });
+</script>
+</body>
+</html>
