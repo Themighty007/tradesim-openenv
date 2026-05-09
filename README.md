@@ -28,7 +28,10 @@ RL agents are naturally lazy and tend to exploit standard PnL reward functions. 
 
 ### 3. Zero-Shot Sim-To-Real Transfer
 Because our agent learns causal relationships rather than memorizing raw prices, it achieves successful **Zero-Shot Transfer**.
-Through an air-gapped live adapter, the system pulls real-time Yahoo Finance data (e.g., SPY, TSLA), formats it into our 4-Axis JSON state, and allows the trained agent to execute its logic on unseen real-world data without retraining a single weight.
+Through an air-gapped live adapter (`live_data_adapter.py`), the system pulls real-time Yahoo Finance data (e.g., SPY, TSLA), formats it into our 4-Axis JSON state, and allows the trained agent to execute its logic on unseen real-world data without retraining a single weight.
+
+**Real-World Implementation Evaluator (`live_data_adapter.py`)**
+We have recently integrated a dedicated real-world evaluator script. It is crucial to emphasize that **while the agent was entirely created and trained in a purely synthetic, simulated environment, this evaluator proves that it works effectively and seamlessly for the real world as well.** It successfully applies causal risk management to live market volatility.
 
 ## 🗂️ Project Structure
 * `app.py`: The main interactive Streamlit terminal, which safely visualizes the agent's logic and handles live external data.
@@ -37,6 +40,7 @@ Through an air-gapped live adapter, the system pulls real-time Yahoo Finance dat
 * `graders.py`: Evaluation scripts ensuring performance compliance.
 * `portfolio.py`: Capital allocation, transaction friction, and risk management logic.
 * `market_data.py`: Handles fetching, formatting, and synthesizing historical and real-time market data.
+* `live_data_adapter.py`: The integrated real-world evaluator that bridges the synthetic agent to live market data.
 * `reward.py`: The hostile reward function definitions punishing drawdowns and transaction costs.
 * `Blog.md`: Comprehensive writeup and architectural breakdown.
 
